@@ -1,0 +1,47 @@
+{
+  "name": "pi-nullsink",
+  "version": "0.1.0",
+  "description": "Pi coding-agent extension: use frontier Anthropic, OpenAI, and Tinfoil models through nullsink — the anonymous, account-less, crypto-paid metered proxy.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "nullsink",
+    "provider",
+    "anthropic",
+    "openai",
+    "privacy"
+  ],
+  "license": "MIT",
+  "homepage": "https://nullsink.is",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nullsink/nullsink.git",
+    "directory": "pi-nullsink"
+  },
+  "type": "module",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "sync:models": "bun run scripts/sync-models.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/bun": "latest",
+    "typebox": "*",
+    "typescript": "^5"
+  }
+}
