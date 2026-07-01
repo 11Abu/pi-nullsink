@@ -35,13 +35,11 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@types/bun": "latest",
-    "typebox": "*",
     "typescript": "^5"
   }
 }
