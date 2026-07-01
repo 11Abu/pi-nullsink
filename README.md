@@ -11,14 +11,21 @@ Monero or Bitcoin, and Pi calls the models through it.
 pi install npm:pi-nullsink
 ```
 
-Then set your key (mint one at [nullsink.is](https://nullsink.is)):
+On first launch it runs a short **guided setup** — mint & fund a key at
+[nullsink.is](https://nullsink.is), or paste one you already have. Your key is saved to
+`~/.pi/agent/nullsink.json` (mode `0600`) so you enter it **once** and never again — it persists
+across sessions and shells. Re-run any time with `/nullsink setup`, or edit it later with
+`/nullsink config`.
+
+Prefer environment variables? Set one and setup won't prompt (env always wins over the saved file):
 
 ```sh
 export NULLSINK_API_KEY=0sink_your_key_here
 ```
 
-Pick a model with `/model` (they appear as **nullsink · Anthropic / OpenAI / Tinfoil**) and chat as
-usual. Check credit any time with `/nullsink`.
+Either way: pick a model with `/model` (they appear as **nullsink · Anthropic / OpenAI / Tinfoil**)
+and chat as usual. A status line under the editor shows your live balance; check it any time with
+`/nullsink`.
 
 ## What you get
 
@@ -37,7 +44,24 @@ The full, current model list is in [`src/models.json`](src/models.json) and via 
 
 - `/nullsink` or `/nullsink balance` — fetch your remaining USD credit (`GET /balance`).
 - `/nullsink models` — list every served model, grouped by provider.
-- `/nullsink setup` — setup instructions and whether your key is currently set.
+- `/nullsink setup` — re-run the guided key setup (mint / paste / skip).
+- `/nullsink config` — edit your key, base URL, or status display; or clear the saved config.
+- `/nullsink help` — the command list.
+
+### Config & status display
+
+`/nullsink config` opens an interactive menu:
+
+- **API key** — shown masked (`0sink_…w4Tz`); paste a new one to replace it. Takes effect on your
+  next message.
+- **Base URL** — for self-hosted forks; re-registers the providers on the spot.
+- **Display** — how the balance readout appears: `statusline` (a footer line, default), `widget`
+  (a two-line block above the editor), `both`, or `off`.
+- **Clear saved config** — removes `~/.pi/agent/nullsink.json`.
+
+The readout updates on session start, after `/nullsink balance` and config edits, and (throttled)
+after each turn — never adding per-message latency. States: `● $42.50` (funded) · `⚠ $0.80 · top up`
+(low) · `⚠ unfunded` (key set, no confirmed deposit) · `○ no key` (run setup).
 
 ## Pricing is exact
 
@@ -58,13 +82,16 @@ export NULLSINK_BASE_URL=https://your-instance.example
 ```
 
 The default is `https://nullsink.is`. The value may be the origin (`https://host`) or the OpenAI base
-(`https://host/v1`) — both resolve correctly.
+(`https://host/v1`) — both resolve correctly. You can also set it interactively via `/nullsink config`
+→ Base URL, which re-registers the providers immediately.
 
 ## Privacy note
 
-Your key **is** your money and your only identity. The raw key leaves your machine only as the
-`x-api-key` / `Authorization: Bearer` header to the nullsink proxy over TLS — the same way the
-official Anthropic/OpenAI SDKs send an API key. Review the
+Your key **is** your money and your only identity. It's saved at rest in `~/.pi/agent/nullsink.json`
+(mode `0600`, owner-only) — the same directory and trust boundary as Pi's own credentials — and leaves
+your machine only as the `x-api-key` / `Authorization: Bearer` header to the nullsink proxy over TLS,
+the same way the official Anthropic/OpenAI SDKs send an API key. It's shown masked (`0sink_…w4Tz`) in
+all UI. Review the
 [trust model](https://github.com/nullsink/nullsink/blob/main/docs/trust-model.md) for what nullsink
 does and does not protect.
 

@@ -147,3 +147,88 @@ export function interpretBalance(status: number, body: unknown): BalanceResult {
   }
   return { kind: "ok", balanceUsd: usd, message: `Balance: ${USD_FMT.format(usd)}` };
 }
+
+// --- persistent config + status rendering (pure) ----------------------------
+// The store.ts I/O layer parses raw JSON through parseStoredConfig and renders through the helpers
+// below; index.ts wires them to pi. Everything here is pure so the precedence + render matrix is
+// unit-testable without a live runtime.
+
+// Below this the statusline flags a low balance and nudges a top-up.
+export const LOW_BALANCE_USD = 1;
+
+// How the balance readout is surfaced. `both` shows the footer line AND the widget; `off` hides both.
+export const DISPLAY_MODES = ["statusline", "widget", "both", "off"] as const;
+export type DisplayMode = (typeof DISPLAY_MODES)[number];
+export function isDisplayMode(x: unknown): x is DisplayMode {
+  return typeof x === "string" && (DISPLAY_MODES as readonly string[]).includes(x);
+}
+
+// The on-disk shape of ~/.pi/agent/nullsink.json. Every field optional: a partial/older file still
+// loads. `setupDone` gates the one-time first-run prompt (set even when the user skips, so it never nags).
+export interface StoredConfig {
+  apiKey?: string;
+  baseUrl?: string;
+  display?: DisplayMode;
+  setupDone?: boolean;
+}
+
+// Coerce parsed JSON (unknown) into a StoredConfig, dropping any field with the wrong type or a blank
+// string — a corrupt/hand-edited file degrades to defaults instead of throwing. Narrows with `in`/typeof
+// (never an inline cast) so each read is actually checked.
+export function parseStoredConfig(raw: unknown): StoredConfig {
+  if (raw === null || typeof raw !== "object") return {};
+  const out: StoredConfig = {};
+  if ("apiKey" in raw && typeof raw.apiKey === "string" && raw.apiKey.trim()) out.apiKey = raw.apiKey.trim();
+  if ("baseUrl" in raw && typeof raw.baseUrl === "string" && raw.baseUrl.trim()) out.baseUrl = raw.baseUrl.trim();
+  if ("display" in raw && isDisplayMode(raw.display)) out.display = raw.display;
+  if ("setupDone" in raw && raw.setupDone === true) out.setupDone = true;
+  return out;
+}
+
+// Mask a key for display: keep the public "0sink_" prefix + last 4 chars, hide the 43-char secret
+// middle. Short/odd values collapse to just the tail (or "…") so nothing sensitive leaks.
+export function maskKey(key: string): string {
+  const k = key.trim();
+  if (k.length <= 4) return "…";
+  if (k.length <= 10) return `…${k.slice(-4)}`;
+  return `${k.slice(0, 6)}…${k.slice(-4)}`;
+}
+
+// Effective base URL string to feed resolveEndpoints: env override wins, then the saved file value,
+// then undefined (resolveEndpoints applies the public default). Shared by startup, the config menu
+// display, and the base-URL editor so all three agree on precedence.
+export function resolveBaseUrlValue(envUrl?: string | null, fileUrl?: string | null): string | undefined {
+  return envUrl?.trim() || fileUrl?.trim() || undefined;
+}
+
+// Snapshot the status renderers consume. `configured` = a key is present (env or saved); `balance` is
+// the last /balance result (undefined until first fetch); `loading` = a fetch is in flight.
+export interface StatusState {
+  configured: boolean;
+  loading: boolean;
+  balance?: BalanceResult;
+  keyMasked?: string;
+}
+
+// The single footer line. Order: no key → known balance (low vs ok) → 401 unfunded → error → mid-fetch
+// → configured-but-not-yet-fetched. Always returns a string; the caller decides whether to show it.
+export function renderStatusLine(s: StatusState): string {
+  if (!s.configured) return "nullsink ○ no key · /nullsink setup";
+  if (s.balance?.kind === "ok" && s.balance.balanceUsd !== undefined) {
+    const amt = USD_FMT.format(s.balance.balanceUsd);
+    return s.balance.balanceUsd < LOW_BALANCE_USD ? `nullsink ⚠ ${amt} · top up` : `nullsink ● ${amt}`;
+  }
+  if (s.balance?.kind === "unknown") return "nullsink ⚠ unfunded · top up";
+  if (s.balance?.kind === "error") return "nullsink ⚠ balance unavailable";
+  if (s.loading) return "nullsink … checking";
+  return "nullsink ● key set";
+}
+
+// The two-line widget: the status line, then a key/action line. Reuses renderStatusLine so the two
+// display modes never disagree on the headline.
+export function renderWidget(s: StatusState): string[] {
+  const second = s.configured
+    ? `${s.keyMasked ?? "key set"} · /nullsink config`
+    : "mint & fund at nullsink.is";
+  return [renderStatusLine(s), second];
+}
