@@ -464,7 +464,7 @@ export function clampRefreshSeconds(n: number): number {
 }
 ```
 
-Keep `maskKey`, `resolveBaseUrlValue`, `DISPLAY_MODES`. Delete `StoredConfig` + `parseStoredConfig` (v1) and the `LOW_BALANCE_USD` const (threshold becomes config; Task 3 rewires `StatusState`). Update `test/config.test.ts`: delete v1 `parseStoredConfig` describe-blocks (replaced by this suite) and any `LOW_BALANCE_USD` references.
+Keep `maskKey`, `resolveBaseUrlValue`, `DISPLAY_MODES`, and (for now) `LOW_BALANCE_USD` — the v1 `renderStatusLine` still references it; Task 3 deletes both together. Delete `StoredConfig` + `parseStoredConfig` (v1). Update `test/config-ui.test.ts` (NOT config.test.ts — that's where these live): delete the `parseStoredConfig` describe-suite (~lines 43-87) and its import; leave the renderer tests alone until Task 3.
 
 - [ ] **Step 4: Rewrite `src/store.ts`**
 
@@ -530,6 +530,7 @@ Update `src/index.ts` call sites: `loadConfig()` → `loadConfigV2()`, `saveConf
   - `interface StatusState { configured: boolean; balance?: BalanceResult; loading?: boolean; lowBalanceUsd: number; incognito?: boolean; order?: OrderReadout; spendUsd?: number }`
   - `renderStatusLine(s: StatusState): string`, `renderWidget(s: StatusState): string[]` (same names, new state shape)
   - `renderOrderSegment(o: OrderReadout): string` → `"⧗ waiting" | "⧗ confirming 4/10" | "⧗ finalizing"`
+  - `formatUsd(n: number): string` — the fixed-locale `USD_FMT` exposed for other renderers (hub wallet header)
 
 - [ ] **Step 1: Update the test file (failing first)**
 
@@ -537,7 +538,7 @@ In `test/config-ui.test.ts`, update every existing `renderStatusLine`/`renderWid
 
 ```ts
 describe("renderStatusLine v2 decorations", () => {
-  const base = { configured: true, lowBalanceUsd: 1, balance: { kind: "ok", balanceUsd: 42.5, display: "$42.50" } } as const;
+  const base = { configured: true, lowBalanceUsd: 1, balance: { kind: "ok", balanceUsd: 42.5, message: "" } } as const;
   test("incognito prefix", () => {
     expect(renderStatusLine({ ...base, incognito: true })).toBe("⦿ incognito · nullsink ● $42.50");
   });
@@ -552,7 +553,7 @@ describe("renderStatusLine v2 decorations", () => {
       .toBe("nullsink ● $42.50 · ⧗ confirming 4/10");
   });
   test("configurable low threshold", () => {
-    const low = { kind: "ok", balanceUsd: 2.4, display: "$2.40" } as const;
+    const low = { kind: "ok", balanceUsd: 2.4, message: "" } as const;
     expect(renderStatusLine({ configured: true, lowBalanceUsd: 5, balance: low })).toContain("⚠");
     expect(renderStatusLine({ configured: true, lowBalanceUsd: 1, balance: low })).toContain("●");
   });
@@ -576,6 +577,8 @@ export interface OrderReadout {
   required?: number;
 }
 
+export const formatUsd = (n: number): string => USD_FMT.format(n);
+
 export function renderOrderSegment(o: OrderReadout): string {
   if (o.phase === "confirming" && o.confirmations !== undefined && o.required !== undefined) {
     return `⧗ confirming ${o.confirmations}/${o.required}`;
@@ -594,11 +597,14 @@ export interface StatusState {
 }
 
 // Core readout: no key → balance (low vs ok) → 401 unfunded → error → mid-fetch → not-yet-fetched.
+// BalanceResult's real shape is { kind, balanceUsd?, message } (src/config.ts) — amounts are
+// formatted HERE via USD_FMT, never read from a display field (none exists).
 function renderCore(s: StatusState): string {
   if (!s.configured) return "○ no key · /nullsink setup";
   const b = s.balance;
-  if (b?.kind === "ok") {
-    return b.balanceUsd < s.lowBalanceUsd ? `⚠ ${b.display} · top up` : `● ${b.display}`;
+  if (b?.kind === "ok" && b.balanceUsd !== undefined) {
+    const usd = USD_FMT.format(b.balanceUsd);
+    return b.balanceUsd < s.lowBalanceUsd ? `⚠ ${usd} · top up` : `● ${usd}`;
   }
   if (b?.kind === "unknown") return "⚠ unfunded · /nullsink topup";
   if (b?.kind === "error") return "⚠ balance unavailable";
@@ -618,7 +624,7 @@ export function renderWidget(s: StatusState): string[] {
 }
 ```
 
-Adjust the existing exact-string assertions in `test/config-ui.test.ts` to the new copy (`⚠ unfunded · /nullsink topup`, widget line 2) — the states themselves are unchanged. Keep whatever copy the old tests pin for `no key` (`○ no key · /nullsink setup`).
+Now delete the `LOW_BALANCE_USD` const (its role is `StatusState.lowBalanceUsd`). Update the existing assertions in `test/config-ui.test.ts` to the new reality — explicit list: drop the `LOW_BALANCE_USD` import + its boundary test (~lines 155-156); drop `keyMasked` from the `st()` fixture and the `renderWidget` key-line tests (~lines 22, 194-205; the widget's second line is now the fixed `/nullsink` hint); update copy pins `⚠ unfunded` → `⚠ unfunded · /nullsink topup` and `nullsink ● key set` → `nullsink ● balance not checked`; keep the `○ no key · /nullsink setup` pin. Every surviving fixture gains `lowBalanceUsd: 1` and drops any `display` field in favor of `message: ""`.
 
 - [ ] **Step 4: Run** — `bun test` → green. **Step 5: Commit** — `git commit -am "feat: status readout v2 — incognito prefix, spend + order segments, configurable threshold"`
 
@@ -983,15 +989,15 @@ describe("reduceStatus", () => {
 
 describe("resolveClosed", () => {
   test("credited when balance rose", () => {
-    expect(resolveClosed(10, { kind: "ok", balanceUsd: 35, display: "$35.00" })).toBe("credited");
+    expect(resolveClosed(10, { kind: "ok", balanceUsd: 35, message: "" })).toBe("credited");
   });
   test("credited when previously unfunded and now any balance", () => {
-    expect(resolveClosed(undefined, { kind: "ok", balanceUsd: 24.9, display: "$24.90" })).toBe("credited");
+    expect(resolveClosed(undefined, { kind: "ok", balanceUsd: 24.9, message: "" })).toBe("credited");
   });
   test("unknown when balance unchanged / fetch failed / still 401", () => {
-    expect(resolveClosed(10, { kind: "ok", balanceUsd: 10, display: "$10.00" })).toBe("unknown");
-    expect(resolveClosed(10, { kind: "error", display: "" })).toBe("unknown");
-    expect(resolveClosed(undefined, { kind: "unknown", display: "" })).toBe("unknown");
+    expect(resolveClosed(10, { kind: "ok", balanceUsd: 10, message: "" })).toBe("unknown");
+    expect(resolveClosed(10, { kind: "error", message: "" })).toBe("unknown");
+    expect(resolveClosed(undefined, { kind: "unknown", message: "" })).toBe("unknown");
   });
 });
 
@@ -1088,6 +1094,7 @@ Note: `BalanceResult` for `kind: "ok"` carries `balanceUsd: number` (existing sh
 
 ```ts
 // test/qr.test.ts
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 import { qrLines } from "../src/ui/qr.ts";
 
@@ -1102,6 +1109,12 @@ describe("qrLines", () => {
   });
   test("deterministic for the same input", () => {
     expect(qrLines("x")).toEqual(qrLines("x"));
+  });
+  test("golden lines for a pinned input (spec: known-matrix golden)", () => {
+    // Committed on first green run: `bun -e 'import("./src/ui/qr.ts").then(m => console.log(JSON.stringify(m.qrLines("nullsink-golden"), null, 2)))' > test/fixtures/qr-golden.json`
+    // Review the output visually once (scan it with a phone), then the fixture pins the renderer.
+    const golden = JSON.parse(readFileSync("test/fixtures/qr-golden.json", "utf8")) as string[];
+    expect(qrLines("nullsink-golden")).toEqual(golden);
   });
 });
 ```
@@ -1225,7 +1238,7 @@ export function clampScroll(cursor: number, count: number, viewport: number, top
   - `interface RowSpec { id: string; section: string; label: string; value: string; kind: "cycle" | "edit" | "action"; options?: readonly string[]; description: string; disabled?: boolean }`
   - `interface HubData { cfg: StoredConfigV2; envKey?: string; envUrl?: string; balance?: BalanceResult; watch?: WatchState; rails?: Rails; models: ModelsFile; currentModelId?: string; currentProviderKey?: "anthropic" | "openai" | "tinfoil"; incognitoActive: boolean; spendUsd?: number }`
   - `type WizardState = { step: "amount"; cursor: number; custom: string; error?: string } | { step: "rail"; creditUsd: number; cursor: number } | { step: "quoting"; creditUsd: number; rail: string } | { step: "pay" } | { step: "error"; message: string }`
-  - `interface HubState { tab: Tab; cursor: Record<Tab, number>; top: Record<Tab, number>; editing: { rowId: string; buffer: string; error?: string } | null; confirm: string | null; reveal: string | null; wizard: WizardState | null; filter: string }`
+  - `interface HubState { tab: Tab; cursor: Record<Tab, number>; top: Record<Tab, number>; editing: { rowId: string; buffer: string; error?: string; confirmMismatch?: boolean } | null; confirm: string | null; reveal: string | null; wizard: WizardState | null; filter: string; pickDefault: boolean }`
   - `initialHubState(): HubState`
   - `settingsRows(d: HubData): RowSpec[]`, `walletRows(d: HubData): RowSpec[]`
   - `interface ModelRow { id: string; provider: "anthropic" | "openai" | "tinfoil"; name: string; contextWindow: number; input: number; output: number }`
@@ -1235,15 +1248,17 @@ export function clampScroll(cursor: number, count: number, viewport: number, top
   - `validateField(rowId: string, buffer: string): { ok: true; value: string | number | undefined } | { ok: false; error: string }`
 
 Behavior contract (encode in tests):
-- `tab`/`shift-tab` cycle tabs (never while `editing`/`wizard`/`reveal` active); `esc` closes the innermost layer (editor → wizard step back → confirm → hub `close` effect).
+- `tab`/`shift-tab` cycle tabs; `←`/`→` do the same whenever the focused row is NOT a cycle row and no editor/wizard/reveal is active (spec: "←→ when no row edit is active"). Never while `editing`/`wizard`/`reveal`. `esc` closes the innermost layer (editor → wizard step back → confirm → hub `close` effect).
 - Cycle rows: `enter`/`right` next option, `left` previous; emit `set` (or `toggleProvider`) immediately.
-- Edit rows: `enter` opens editor seeded with the RAW current value ("" for unset); chars/backspace edit; `enter` validates → `set` effect + close editor, or error kept in editor; `esc` cancels.
+- Edit rows: `enter` opens editor seeded with the field's explicitly-set raw value, `""` when unset (defaults are NOT echoed into the buffer); chars/backspace edit; `enter` validates → `set` effect + close editor, or error kept in editor; `esc` cancels.
+- API-key mismatch confirm (spec: "confirm on mismatch"): first `enter` on a checksum-failing paste keeps the editor open with error `checksum failed — enter again to save anyway`; a second consecutive `enter` with the same buffer commits it (tracked via `editing.confirmMismatch`). Any edit clears the armed state.
 - Action rows: `enter` emits `action`; destructive ids (`clear-config`, `profile-delete`) require a second `enter` while `confirm === rowId` (any other key cancels confirm).
 - Provider toggle rows: disabled (with explanatory description) when `d.currentProviderKey` matches and the toggle is currently on — the in-use provider can't be switched off.
 - Env-overridden rows (`apiKey` when `envKey`, `baseUrl` when `envUrl`): `disabled: true`, value suffixed `" (env)"`.
 - Wallet wizard: on `topup` action → `{ step: "amount", cursor: 1, custom: "" }` (cursor 1 = $25 default); presets + `custom…` navigable with `left`/`right`; digits type into custom (auto-jump cursor to custom); `enter` validates ($2–$100) → `{ step: "rail", cursor: index-of-default-rail }`; rails listed from `d.rails ?? RAILS_FALLBACK`; `enter` → `quote` effect + `{ step: "quoting" }`; in `pay`: `{ char: "t" }` → `openTrocador`, `esc` → wizard `null` (watching continues); in `error`: `enter`/`esc` → back to `amount`.
 - `reveal` (mint): any key except `enter` ignored; `enter` emits `action: "mint-saved"`.
-- Models tab: printable chars append to `filter`, `backspace` deletes, rows from `modelRows`, `enter` emits `setDefaultModel`.
+- Models tab: printable chars append to `filter`, `backspace` deletes, rows from `modelRows`, `enter` emits `setDefaultModel` — and when `pickDefault` is set (armed by the Settings "Default model" action), also clears it and returns `tab: "settings"`.
+- Pick-default round trip: Settings `defaultModel` action → `{ tab: "models", pickDefault: true }`; a plain visit to the Models tab leaves `pickDefault` false and `enter` stays on the tab.
 
 - [ ] **Step 1: Write the failing test** — cover the whole contract above. Key cases (write ALL of these):
 
@@ -1432,6 +1447,67 @@ describe("confirm + reveal", () => {
     expect(s2.reveal).toBeNull();
   });
 });
+
+describe("review-pinned behaviors", () => {
+  function cursorToSettings(s: HubState, d: HubData, rowId: string): HubState {
+    const idx = settingsRows(d).findIndex((r) => r.id === rowId);
+    return { ...s, cursor: { ...s.cursor, settings: idx } };
+  }
+  test("←→ on a non-cycle row switches tabs", () => {
+    const d = data();
+    let s = cursorToSettings(initialHubState(), d, "apiKey"); // edit row
+    s = reduceHub(s, "right", d).state;
+    expect(s.tab).toBe("wallet");
+    s = reduceHub({ ...s, tab: "settings" }, "left", d).state;
+    expect(s.tab).toBe("models");
+  });
+  test("pick-default round trip: Settings → Models → enter → back to Settings", () => {
+    const d = data();
+    let s = cursorToSettings(initialHubState(), d, "defaultModel");
+    s = reduceHub(s, "enter", d).state;
+    expect(s).toMatchObject({ tab: "models", pickDefault: true });
+    const { state: s2, effects } = reduceHub(s, "enter", d);
+    expect(effects[0]?.kind).toBe("setDefaultModel");
+    expect(s2).toMatchObject({ tab: "settings", pickDefault: false });
+  });
+  test("plain Models visit: enter sets default but stays on the tab", () => {
+    const d = data();
+    const s: HubState = { ...initialHubState(), tab: "models" };
+    const { state: s2, effects } = reduceHub(s, "enter", d);
+    expect(effects[0]?.kind).toBe("setDefaultModel");
+    expect(s2.tab).toBe("models");
+  });
+  test("apiKey checksum mismatch: first enter arms, second enter saves anyway", () => {
+    const d = data();
+    let s = cursorToSettings(initialHubState(), d, "apiKey");
+    s = reduceHub(s, "enter", d).state; // open editor (blank seed)
+    const bad = `0sink_${"c".repeat(47)}`;
+    for (const ch of bad) s = reduceHub(s, { char: ch }, d).state;
+    const first = reduceHub(s, "enter", d);
+    expect(first.effects).toEqual([]);
+    expect(first.state.editing?.error).toContain("enter again");
+    const second = reduceHub(first.state, "enter", d);
+    expect(second.effects).toEqual([{ kind: "set", field: "apiKey", value: bad }]);
+    expect(second.state.editing).toBeNull();
+  });
+  test("rename profile: action opens editor, commit emits profile-rename:<name>", () => {
+    const d = data();
+    let s: HubState = { ...initialHubState(), tab: "wallet" };
+    const rows = walletRows(d);
+    s = { ...s, cursor: { ...s.cursor, wallet: rows.findIndex((r) => r.id === "profile-rename") } };
+    s = reduceHub(s, "enter", d).state;
+    expect(s.editing?.rowId).toBe("profile-rename");
+    for (const ch of "work") s = reduceHub(s, { char: ch }, d).state;
+    const { effects } = reduceHub(s, "enter", d);
+    expect(effects).toEqual([{ kind: "action", id: "profile-rename:work" }]);
+  });
+  test("editor seeds empty for unset numeric fields", () => {
+    const d = data(); // cfg has no lowBalanceUsd set
+    let s = cursorToSettings(initialHubState(), d, "lowBalanceUsd");
+    s = reduceHub(s, "enter", d).state;
+    expect(s.editing?.buffer).toBe("");
+  });
+});
 ```
 
 - [ ] **Step 2: Run to verify failure** — `bun test test/hub-model.test.ts` → FAIL (missing module).
@@ -1442,12 +1518,12 @@ describe("confirm + reveal", () => {
 // Pure hub model: rows, state, key reducer, wizard machine. NO pi-tui imports, NO I/O —
 // everything here runs under bun test with plain objects.
 import {
-  activeProfile, DEFAULTS, DISPLAY_MODES, maskKey,
+  activeProfile, DEFAULTS, DISPLAY_MODES, maskKey, renderOrderSegment,
   type ModelsFile, type StoredConfigV2,
 } from "../config.ts";
 import { isValidToken } from "../token.ts";
 import {
-  AMOUNT_PRESETS, BUY_MAX_USD, BUY_MIN_USD, RAILS_FALLBACK,
+  AMOUNT_PRESETS, BUY_MAX_USD, BUY_MIN_USD, RAILS_FALLBACK, toOrderReadout,
   type Rails, type WatchState,
 } from "../wallet.ts";
 import type { BalanceResult } from "../config.ts";
@@ -1495,11 +1571,12 @@ export interface HubState {
   tab: Tab;
   cursor: Record<Tab, number>;
   top: Record<Tab, number>;
-  editing: { rowId: string; buffer: string; error?: string } | null;
+  editing: { rowId: string; buffer: string; error?: string; confirmMismatch?: boolean } | null;
   confirm: string | null;
   reveal: string | null;
   wizard: WizardState | null;
   filter: string;
+  pickDefault: boolean;
 }
 
 export function initialHubState(): HubState {
@@ -1507,11 +1584,12 @@ export function initialHubState(): HubState {
     tab: "settings",
     cursor: { settings: 0, wallet: 0, models: 0 },
     top: { settings: 0, wallet: 0, models: 0 },
-    editing: null, confirm: null, reveal: null, wizard: null, filter: "",
+    editing: null, confirm: null, reveal: null, wizard: null, filter: "", pickDefault: false,
   };
 }
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high"] as const; // pi's ThinkingLevel set
+// pi's full ThinkingLevel union — see @earendil-works/pi-agent-core/dist/types.d.ts (verify on read).
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 export function settingsRows(d: HubData): RowSpec[] {
   const cfg = d.cfg;
@@ -1596,7 +1674,9 @@ export function settingsRows(d: HubData): RowSpec[] {
   return rows;
 }
 
-export function walletRows(d: HubData): RowSpec[] {
+// `now` drives the pending-order countdown; callers that only need row IDENTITY (the reducer)
+// can use the default.
+export function walletRows(d: HubData, now: number = Date.now()): RowSpec[] {
   const cfg = d.cfg;
   const rows: RowSpec[] = [];
   const names = Object.keys(cfg.profiles);
@@ -1607,10 +1687,11 @@ export function walletRows(d: HubData): RowSpec[] {
   });
   rows.push({ id: "topup", section: "Wallet", label: "Top up", kind: "action", value: "", description: "Fund the active key: amount → coin → pay by QR/address" });
   if (activeProfile(cfg).pendingOrder) {
-    rows.push({ id: "pay", section: "Wallet", label: "Pending order", kind: "action", value: orderRowValue(d), description: "Reopen the pay screen for the in-flight order" });
+    rows.push({ id: "pay", section: "Wallet", label: "Pending order", kind: "action", value: orderRowValue(d, now), description: "Reopen the pay screen for the in-flight order" });
   }
   rows.push({ id: "mint", section: "Wallet", label: "Mint new key", kind: "action", value: "", description: "Generate a fresh key locally (shown once), then fund it" });
   rows.push({ id: "profile-new", section: "Wallet", label: "New profile", kind: "action", value: "", description: "Add a named profile for another key" });
+  rows.push({ id: "profile-rename", section: "Wallet", label: "Rename profile", kind: "action", value: cfg.activeProfile, description: "Rename the active profile" });
   rows.push({ id: "profile-delete", section: "Wallet", label: "Delete profile", kind: "action", value: cfg.activeProfile, description: "Remove the active profile and its saved key (enter twice)" });
   rows.push({ id: "balance", section: "Wallet", label: "Check balance now", kind: "action", value: "", description: "Fetch the live balance" });
   rows.push({ id: "setup", section: "Wallet", label: "Re-run setup", kind: "action", value: "", description: "The guided first-run flow" });
@@ -1618,11 +1699,16 @@ export function walletRows(d: HubData): RowSpec[] {
   return rows;
 }
 
-function orderRowValue(d: HubData): string {
-  const w = d.watch;
-  if (!w) return "⧗ …";
-  if (w.phase === "confirming" && w.confirmations !== undefined) return `⧗ confirming ${w.confirmations}/${w.required}`;
-  return `⧗ ${w.phase}`;
+// Row value for the pending order: state · credit · time to the pay-by deadline (spec:
+// "⧗ confirming 4/10 · $25 · expires 19:42"). Single source for the ⧗ prefix: renderOrderSegment.
+function orderRowValue(d: HubData, now: number): string {
+  const order = activeProfile(d.cfg).pendingOrder;
+  const seg = d.watch && toOrderReadout(d.watch) ? renderOrderSegment(toOrderReadout(d.watch)!) : "⧗ …";
+  if (!order) return seg;
+  const remaining = Math.max(0, order.expiresAt - now);
+  const mm = Math.floor(remaining / 60000);
+  const ss = Math.floor((remaining % 60000) / 1000).toString().padStart(2, "0");
+  return `${seg} · $${order.creditUsd} · expires ${mm}:${ss}`;
 }
 
 export interface ModelRow {
@@ -1695,6 +1781,7 @@ export function validateField(
       if (!Number.isFinite(n) || n <= 0) return { ok: false, error: "enter seconds (min 15)" };
       return { ok: true, value: Math.max(15, Math.round(n)) };
     }
+    case "profile-rename":
     case "profile-new": {
       if (!/^[A-Za-z0-9_-]{1,32}$/.test(v)) return { ok: false, error: "letters/digits/dash/underscore, max 32" };
       return { ok: true, value: v };
@@ -1722,15 +1809,24 @@ export function reduceHub(state: HubState, key: KeyName, d: HubData): { state: H
 function reduceEditing(state: HubState, key: KeyName): { state: HubState; effects: HubEffect[] } {
   const e = state.editing!;
   if (key === "esc") return { state: { ...state, editing: null }, effects: [] };
-  if (key === "backspace") return { state: { ...state, editing: { ...e, buffer: e.buffer.slice(0, -1), error: undefined } }, effects: [] };
-  if (typeof key === "object") return { state: { ...state, editing: { ...e, buffer: e.buffer + key.char, error: undefined } }, effects: [] };
+  if (key === "backspace") return { state: { ...state, editing: { ...e, buffer: e.buffer.slice(0, -1), error: undefined, confirmMismatch: false } }, effects: [] };
+  if (typeof key === "object") return { state: { ...state, editing: { ...e, buffer: e.buffer + key.char, error: undefined, confirmMismatch: false } }, effects: [] };
   if (key === "enter") {
     const res = validateField(e.rowId, e.buffer);
-    if (!res.ok) return { state: { ...state, editing: { ...e, error: res.error } }, effects: [] };
-    const field = e.rowId === "profile-new" ? "profile-new" : e.rowId;
-    const effect: HubEffect = field === "profile-new"
-      ? { kind: "action", id: `profile-new:${res.value}` }
-      : { kind: "set", field, value: res.value };
+    if (!res.ok) {
+      // Spec: API-key checksum mismatch is confirmable — a second consecutive enter saves anyway
+      // (mirrors the guided setup's "save anyway?"). All other fields hard-reject.
+      if (e.rowId === "apiKey" && e.buffer.trim().length > 0) {
+        if (e.confirmMismatch) {
+          return { state: { ...state, editing: null }, effects: [{ kind: "set", field: "apiKey", value: e.buffer.trim() }] };
+        }
+        return { state: { ...state, editing: { ...e, error: "checksum failed — enter again to save anyway", confirmMismatch: true } }, effects: [] };
+      }
+      return { state: { ...state, editing: { ...e, error: res.error } }, effects: [] };
+    }
+    const effect: HubEffect = e.rowId === "profile-new" || e.rowId === "profile-rename"
+      ? { kind: "action", id: `${e.rowId}:${res.value}` }
+      : { kind: "set", field: e.rowId, value: res.value };
     return { state: { ...state, editing: null }, effects: [effect] };
   }
   return { state, effects: [] };
@@ -1789,12 +1885,16 @@ function rowsFor(state: HubState, d: HubData): RowSpec[] {
   return state.tab === "settings" ? settingsRows(d) : state.tab === "wallet" ? walletRows(d) : [];
 }
 
+function cycleTab(state: HubState, back: boolean): HubState {
+  const dir = back ? TABS.length - 1 : 1;
+  const tab = TABS[(TABS.indexOf(state.tab) + dir) % TABS.length]!;
+  return { ...state, tab, confirm: null };
+}
+
 function reduceRows(state: HubState, key: KeyName, d: HubData): { state: HubState; effects: HubEffect[] } {
   // tab switching
   if (key === "tab" || key === "shift-tab") {
-    const dir = key === "tab" ? 1 : TABS.length - 1;
-    const tab = TABS[(TABS.indexOf(state.tab) + dir) % TABS.length]!;
-    return { state: { ...state, tab, confirm: null }, effects: [] };
+    return { state: cycleTab(state, key === "shift-tab"), effects: [] };
   }
   if (key === "esc") {
     if (state.confirm) return { state: { ...state, confirm: null }, effects: [] };
@@ -1804,13 +1904,15 @@ function reduceRows(state: HubState, key: KeyName, d: HubData): { state: HubStat
   // models tab: filter + list
   if (state.tab === "models") {
     const rows = modelRows(d.models, state.filter, d.cfg.providers ?? DEFAULTS.providers);
+    if (key === "left" || key === "right") return { state: cycleTab(state, key === "left"), effects: [] };
     if (typeof key === "object") return { state: { ...state, filter: state.filter + key.char }, effects: [] };
     if (key === "backspace") return { state: { ...state, filter: state.filter.slice(0, -1) }, effects: [] };
     if (key === "down") return { state: moveCursor(state, "models", 1, rows.length), effects: [] };
     if (key === "up") return { state: moveCursor(state, "models", -1, rows.length), effects: [] };
     if (key === "enter" && rows.length > 0) {
       const m = rows[Math.min(state.cursor.models, rows.length - 1)]!;
-      return { state, effects: [{ kind: "setDefaultModel", modelId: m.id }] };
+      const next = state.pickDefault ? { ...state, pickDefault: false, tab: "settings" as Tab } : state;
+      return { state: next, effects: [{ kind: "setDefaultModel", modelId: m.id }] };
     }
     return { state, effects: [] };
   }
@@ -1822,6 +1924,11 @@ function reduceRows(state: HubState, key: KeyName, d: HubData): { state: HubStat
   if (key === "down") return { state: moveCursor(state, state.tab, 1, rows.length), effects: [] };
   if (key === "up") return { state: moveCursor(state, state.tab, -1, rows.length), effects: [] };
   if (!row || row.disabled) return { state: { ...state, confirm: null }, effects: [] };
+
+  // ←→ on a NON-cycle row = tab switching (spec: "←→ when no row edit is active").
+  if ((key === "left" || key === "right") && row.kind !== "cycle") {
+    return { state: cycleTab(state, key === "left"), effects: [] };
+  }
 
   if (row.kind === "cycle" && (key === "enter" || key === "left" || key === "right")) {
     const opts = row.options!;
@@ -1837,7 +1944,7 @@ function reduceRows(state: HubState, key: KeyName, d: HubData): { state: HubStat
 
   if (key === "enter") {
     if (row.kind === "edit") {
-      const seed = row.id === "apiKey" || row.id === "profile-new" ? "" : rawEditValue(row.id, d);
+      const seed = rawEditValue(row.id, d);
       return { state: { ...state, editing: { rowId: row.id, buffer: seed } }, effects: [] };
     }
     if (row.kind === "action") {
@@ -1845,8 +1952,8 @@ function reduceRows(state: HubState, key: KeyName, d: HubData): { state: HubStat
       if (destructive && state.confirm !== row.id) return { state: { ...state, confirm: row.id }, effects: [] };
       if (row.id === "topup") return { state: { ...state, confirm: null, wizard: { step: "amount", cursor: 1, custom: "" } }, effects: [] };
       if (row.id === "pay") return { state: { ...state, confirm: null, wizard: { step: "pay" } }, effects: [] };
-      if (row.id === "profile-new") return { state: { ...state, confirm: null, editing: { rowId: "profile-new", buffer: "" } }, effects: [] };
-      if (row.id === "defaultModel") return { state: { ...state, tab: "models" }, effects: [] };
+      if (row.id === "profile-new" || row.id === "profile-rename") return { state: { ...state, confirm: null, editing: { rowId: row.id, buffer: "" } }, effects: [] };
+      if (row.id === "defaultModel") return { state: { ...state, tab: "models", pickDefault: true }, effects: [] };
       return { state: { ...state, confirm: null }, effects: [{ kind: "action", id: row.id }] };
     }
   }
@@ -1858,14 +1965,16 @@ function moveCursor(state: HubState, tab: Tab, delta: number, count: number): Hu
   return { ...state, confirm: null, cursor: { ...state.cursor, [tab]: c } };
 }
 
+// Seed for the inline editor: ONLY explicitly-set values echo back; unset fields (and secrets)
+// start empty so defaults are never accidentally prefixed into the typed value.
 function rawEditValue(rowId: string, d: HubData): string {
   const cfg = d.cfg;
   switch (rowId) {
     case "baseUrl": return cfg.baseUrl ?? "";
-    case "lowBalanceUsd": return String(cfg.lowBalanceUsd ?? DEFAULTS.lowBalanceUsd);
+    case "lowBalanceUsd": return cfg.lowBalanceUsd !== undefined ? String(cfg.lowBalanceUsd) : "";
     case "spendWarnUsd": return cfg.spendWarnUsd !== undefined ? String(cfg.spendWarnUsd) : "";
-    case "refreshSeconds": return String(cfg.refreshSeconds ?? DEFAULTS.refreshSeconds);
-    default: return "";
+    case "refreshSeconds": return cfg.refreshSeconds !== undefined ? String(cfg.refreshSeconds) : "";
+    default: return ""; // apiKey and profile names always start blank
   }
 }
 ```
@@ -1940,7 +2049,7 @@ describe("renderHub", () => {
   });
   test("wallet tab shows balance header and rows", () => {
     const s: HubState = { ...initialHubState(), tab: "wallet" };
-    const text = renderHub(s, data({ balance: { kind: "ok", balanceUsd: 42.5, display: "$42.50" } }), 80, 30, theme).join("\n");
+    const text = renderHub(s, data({ balance: { kind: "ok", balanceUsd: 42.5, message: "" } }), 80, 30, theme).join("\n");
     expect(text).toContain("$42.50");
     expect(text).toContain("Profile: default");
     expect(text).toContain("Top up");
@@ -1983,7 +2092,7 @@ describe("renderPayScreen", () => {
 // Hub rendering: pure (state, data, width, now) → lines. All styling through ThemeLike so tests
 // run with an identity stub. Style AFTER padding (padCell truncation assumes unstyled cells).
 import {
-  activeProfile, type PendingOrder, type StoredConfigV2,
+  activeProfile, formatUsd, type PendingOrder, type StoredConfigV2,
 } from "../config.ts";
 import { AMOUNT_PRESETS, RAILS_FALLBACK, type WatchState } from "../wallet.ts";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -2069,7 +2178,7 @@ export function renderWalletTab(state: HubState, d: HubData, width: number, heig
     const order = activeProfile(d.cfg).pendingOrder;
     if (order) return renderPayScreen(order, d.watch ?? { phase: "waiting" }, now, width, theme);
   }
-  const head = `Balance ${d.balance?.kind === "ok" ? `● ${d.balance.display}` : d.balance?.kind === "unknown" ? "⚠ unfunded" : "…"} · Profile: ${d.cfg.activeProfile}`;
+  const head = `Balance ${d.balance?.kind === "ok" && d.balance.balanceUsd !== undefined ? `● ${formatUsd(d.balance.balanceUsd)}` : d.balance?.kind === "unknown" ? "⚠ unfunded" : "…"} · Profile: ${d.cfg.activeProfile}`;
   const lines: string[] = [theme.fg("accent", clampLine(head, width)), ""];
 
   if (state.wizard) {
@@ -2268,15 +2377,23 @@ export function openHub(ctx: ExtensionContext, host: HubHost): Promise<void> {
       repaint();
     }
 
+    let cachedLines: string[] | undefined;
     return {
       render(width: number): string[] {
-        return renderHub(state, host.data(), width, Math.max(16, (tui as { rows?: number }).rows ?? 30), theme);
+        if (!cachedLines) {
+          cachedLines = renderHub(state, host.data(), width, Math.max(16, tui.terminal.rows ?? 30), theme);
+        }
+        return cachedLines;
+      },
+      invalidate(): void {
+        cachedLines = undefined; // Component contract REQUIRES invalidate (pi-tui dist/tui.d.ts)
       },
       handleInput(data: string): void {
         const key = hubKeyFromData(data);
         if (!key) return;
         const r = reduceHub(state, key, host.data());
         state = r.state;
+        cachedLines = undefined;
         void dispatch(r.effects);
         tui.requestRender();
       },
@@ -2285,7 +2402,7 @@ export function openHub(ctx: ExtensionContext, host: HubHost): Promise<void> {
 }
 ```
 
-Note: if `Component`'s interface differs on read (e.g. render signature or a required `dispose`), match `examples/extensions/questionnaire.ts` exactly — it is the canonical consumer of `ctx.ui.custom` for this pi version. The `tui.rows` probe is best-effort; when unavailable use 30.
+Notes: `Component` REQUIRES `invalidate()` (pi-tui `dist/tui.d.ts`) — the questionnaire example returns `{ render, invalidate, handleInput }`; match it exactly if anything else differs. Terminal height is `tui.terminal.rows` (there is no `tui.rows`). The `repaint` helper must also clear `cachedLines` (set it from a shared closure or call the component's own invalidate).
 
 - [ ] **Step 2: Typecheck** — `bun run typecheck` → clean. **Step 3: Commit** — `git commit -am "feat: hub component shell wiring model+render into ctx.ui.custom"`
 
@@ -2302,7 +2419,7 @@ Note: if `Component`'s interface differs on read (e.g. render signature or a req
 - Produces:
   - `isIncognito(ctx: { sessionManager: { getSessionFile(): string | undefined } }): boolean`
   - `sessionIsFresh(entries: ReadonlyArray<{ type?: string }>): boolean` — true when no entry is a user/assistant message (headers/custom entries don't count)
-  - `goIncognito(ctx: ExtensionContext): Promise<boolean>` — replaces the session with a never-persisted one; false (and no session change) on any failure
+  - `goIncognito(ctx: unknown): Promise<boolean>` — runtime-probes the ctx for `newSession` (command contexts carry it typed; event contexts may at runtime); replaces the session with a never-persisted one; false (and no session change) on any failure or when the probe finds nothing
 
 - [ ] **Step 1: Write the failing test** (pure parts only — the effect is smoke-tested live):
 
@@ -2340,7 +2457,6 @@ describe("sessionIsFresh", () => {
 // Boundary (also in README): this stops the TRANSCRIPT. Terminal scrollback, shell history,
 // and files the agent edits are out of scope. Config writes (key, orders) continue by design.
 import { rmSync } from "node:fs";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export function isIncognito(ctx: { sessionManager: { getSessionFile(): string | undefined } }): boolean {
   return ctx.sessionManager.getSessionFile() === undefined;
@@ -2354,10 +2470,23 @@ export function sessionIsFresh(entries: ReadonlyArray<{ type?: string }>): boole
 // Swap to a session that will never touch disk again: point the session file at /dev/null
 // and remove the stub pi created at newSession time. Returns success; failure leaves the
 // original session intact (caller notifies "run pi --no-session instead").
-export async function goIncognito(ctx: ExtensionContext): Promise<boolean> {
+//
+// newSession lives on ExtensionCommandContext (types.d.ts ~L249), NOT on the plain
+// ExtensionContext event handlers receive — but the runner's action table registers it for
+// event contexts too. So: accept a structural ctx and probe at runtime; a ctx without
+// newSession simply returns false and the caller falls back to messaging.
+type NewSessionCapable = {
+  newSession(options?: {
+    setup?: (sm: { getSessionFile(): string | undefined; setSessionFile(f: string): void }) => Promise<void>;
+  }): Promise<unknown>;
+};
+
+export async function goIncognito(ctx: unknown): Promise<boolean> {
+  const c = ctx as Partial<NewSessionCapable>;
+  if (typeof c.newSession !== "function") return false;
   try {
     let swapped = false;
-    await ctx.newSession({
+    await c.newSession({
       setup: async (sm) => {
         const stub = sm.getSessionFile();
         sm.setSessionFile("/dev/null");
@@ -2376,11 +2505,13 @@ Verify the entry `type` discriminant before finishing this task: run
 `grep -n "type SessionEntry" -A 12 node_modules/@earendil-works/pi-coding-agent/dist/core/session-manager.d.ts`
 — if messages are discriminated differently (e.g. `role` or a union of `"user" | "assistant"` types), adjust `sessionIsFresh` AND its test to the real discriminant. The test pins whatever the real shape is.
 
-Also verify where `newSession` lives: run
-`grep -n "newSession" node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`
-— it sits on the command/event extension context (~line 252). If the `session_start` event ctx does
-NOT expose it, restrict `always`-mode to a notify ("run /nullsink incognito") and keep `goIncognito`
-on the command path only; the live smoke (Task 14, step 4) is the arbiter.
+`newSession` location (verified during plan review): it sits on `ExtensionCommandContext`
+(types.d.ts:249-256); event handlers get plain `ExtensionContext` (types.d.ts:818) WITHOUT it in
+the type — but the runner's handler-action table (types.d.ts ~L1154) registers `newSession` for
+event contexts, so the runtime probe above may still succeed at `session_start`. The command path
+(`/nullsink incognito`, hub action) is typed and guaranteed; `always`-at-start depends on the probe
+and degrades to a notify ("run /nullsink incognito") when absent. The live smoke (Task 14, step 4)
+is the arbiter — record which path fired.
 
 - [ ] **Step 4: Run** — PASS. **Step 5: Commit** — `git commit -am "feat: incognito — badge detection, fresh-session guard, no-persist session swap"`
 
@@ -2407,7 +2538,7 @@ function currentEndpoints(): Endpoints {
 }
 // One WalletApi per call — it is stateless; origin follows live config edits.
 function walletApi(): WalletApi {
-  return new WalletApi(currentEndpoints().origin);
+  return new WalletApi(currentEndpoints().site);
 }
 // The raw key for /balance + /buy hashing: env wins, then the active profile.
 function resolveRawKey(): string | undefined {
@@ -2415,8 +2546,8 @@ function resolveRawKey(): string | undefined {
 }
 ```
 
-(`Endpoints` already exposes the site root — check the existing `resolveEndpoints` return shape for
-the exact field name; if it is `origin`/`site`/`root`, use that name consistently in Tasks 4, 12, 13.)
+(`Endpoints.site` is the verified field name for the site root — src/config.ts:30-37 defines
+`{ site, openai, balance }`. Use `.site` consistently here and in Task 13.)
 
 ```ts
 const state: {
@@ -2427,17 +2558,19 @@ const state: {
   watch: WatchState | null;               // pending-order watcher state
   watchTimer: ReturnType<typeof setInterval> | null;
   spendWarned: boolean;
+  spendUsd?: number;                      // this session's summed nullsink cost
   sessionStartEntryCount: number;         // for spend: entries before this session's turns
+  rails?: Rails;                          // GET /rails cache, fetched once per session
 } = { cfg: emptyConfigV2(), injectedEnv: false, lastFetchMs: 0, watch: null, watchTimer: null, spendWarned: false, sessionStartEntryCount: 0 };
 ```
 
 - [ ] **Step 2: Startup (extension function body)** — order: `state.cfg = loadConfigV2() ?? emptyConfigV2()`; inject `process.env[API_KEY_ENV] = activeProfile(cfg).apiKey` when env unset and profile key present (`state.injectedEnv = true`); register providers per `cfg.providers ?? DEFAULTS.providers` (skip disabled ones — filter `buildProviders(...)` output by toggle before `registerProvider`); register the `/nullsink` command; subscribe events.
 
 - [ ] **Step 3: `session_start` handler** —
-  1. incognito `always`: if `cfg.incognito === "always"` and NOT already `isIncognito(ctx)`: if `sessionIsFresh(ctx.sessionManager.getEntries())` → `await goIncognito(ctx)`; success → `ctx.ui.notify("incognito — this session will not be saved", "info")`; failure → notify warning `couldn't go incognito — run pi --no-session`. Not fresh → notify info `resumed session is still being saved; start fresh for incognito`.
-  2. default model: if `cfg.defaultModel` set and its provider toggle on: find the model via `pi.models` registry lookup used at registration (match by `provider === PROVIDER_IDS.* && id === cfg.defaultModel`); `await pi.setModel(model)`; if it returns false, notify once. Then `pi.setThinkingLevel(cfg.thinkingLevel as ThinkingLevel)` when set. (Find the exact model-lookup call by reading how the existing code passes models to `registerProvider` — the registered `ProviderConfig.models` entries carry ids; `pi.setModel` accepts a `Model` object; obtain one via the existing `buildProviders` output: provider entry + model id → construct the same object shape the provider registration used. Anchor: `registerAll()`.)
-  3. resume order watch: `const order = activeProfile(cfg).pendingOrder`; if present → `startWatch(ctx)` (below), applying `orderDropReason(order, Date.now(), endpoints.origin)` first: a drop reason clears `pendingOrder` (save) + notify.
-  4. `state.sessionStartEntryCount = ctx.sessionManager.getEntries().length`; kick a non-blocking `refreshBalance(ctx, true)`.
+  1. incognito `always`: if `cfg.incognito === "always"` and NOT already `isIncognito(ctx)`: if `sessionIsFresh(ctx.sessionManager.getEntries())` → `await goIncognito(ctx)` (runtime-probes for `newSession`; see Task 11). Success → `ctx.ui.notify("incognito — this session will not be saved", "info")`; probe-absent or failure → notify warning `couldn't go incognito automatically — run /nullsink incognito (or pi --no-session)`. Not fresh → notify info `resumed session is still being saved; start fresh for incognito`.
+  2. default model: if `cfg.defaultModel` set AND its provider toggle on AND `resolveRawKey()` returns a key (spec: "only when … the key resolves"): look up which `models.providers.*` group contains `cfg.defaultModel`, map that group through `PROVIDER_IDS` to the provider id, then `const model = ctx.modelRegistry.find(providerId, cfg.defaultModel)` — `ctx.modelRegistry.find(provider: string, modelId: string)` is the real lookup (types.d.ts:221, model-registry.d.ts:60-63); there is NO `pi.models`. If found → `await pi.setModel(model)`; `false` return → notify once. Then `pi.setThinkingLevel(cfg.thinkingLevel as ThinkingLevel)` when set — pi clamps to model capabilities internally (types.d.ts:907 "clamped to model capabilities"), no hand-clamp needed.
+  3. resume order watch: `const order = activeProfile(cfg).pendingOrder`; if present → `startWatch(ctx)` (below), applying `orderDropReason(order, Date.now(), currentEndpoints().site)` first: a drop reason clears `pendingOrder` (save) + notify.
+  4. `state.sessionStartEntryCount = ctx.sessionManager.getEntries().length`; kick a non-blocking `refreshBalance(ctx, true)` and a non-blocking rails prefetch: `void walletApi().rails().then((r) => { state.rails = r; })` (WalletApi.rails never throws — fallback is built in).
 
 - [ ] **Step 4: order watcher** —
 
@@ -2456,7 +2589,7 @@ function stopWatch(): void {
 async function tickWatch(ctx: ExtensionContext): Promise<void> {
   const order = activeProfile(state.cfg).pendingOrder;
   if (!order || !state.watch) return stopWatch();
-  const drop = orderDropReason(order, Date.now(), currentEndpoints().origin);
+  const drop = orderDropReason(order, Date.now(), currentEndpoints().site);
   if (drop) return settleWatch(ctx, "dropped", drop);
   let status: OrderStatusRes;
   try {
@@ -2472,7 +2605,10 @@ async function tickWatch(ctx: ExtensionContext): Promise<void> {
   // closed = ambiguous → resolve against a fresh balance
   const key = resolveRawKey();                       // env or active profile
   const before = state.balance?.kind === "ok" ? state.balance.balanceUsd : undefined;
-  const fresh = key ? await walletApi().balance(key) : ({ kind: "error", display: "" } as BalanceResult);
+  if (!key) return settleWatch(ctx, "unknown"); // keyless can't resolve — surface "check balance"
+  const fresh = await walletApi().balance(key);
+  if (fresh.kind === "error") return; // transient blip at the settle moment — retry next tick,
+                                      // /order-status still answers "closed" then
   if (fresh.kind === "ok") state.balance = fresh;
   settleWatch(ctx, resolveClosed(before, fresh) === "credited" ? "credited" : "unknown");
 }
@@ -2490,7 +2626,7 @@ function settleWatch(ctx: ExtensionContext, phase: "credited" | "unknown" | "dro
 }
 ```
 
-- [ ] **Step 5: `turn_end` handler** — existing throttled refresh switches to `clampRefreshSeconds(cfg.refreshSeconds ?? 60) * 1000`; then spend: sum this session's assistant-message costs (entries after `state.sessionStartEntryCount` whose model id belongs to our three providers). Verify the usage field first: `grep -n "usage" node_modules/@earendil-works/pi-coding-agent/dist/core/messages.d.ts | head` — expect a per-message `usage` with a cost total or component costs; sum `usage.cost.total` when present, else compute from components. Store into `state.spendUsd`; when `cfg.spendWarnUsd` set, not yet `state.spendWarned`, and spend crosses it → notify + `state.spendWarned = true`.
+- [ ] **Step 5: `turn_end` handler** — existing throttled refresh switches to `clampRefreshSeconds(cfg.refreshSeconds ?? 60) * 1000`; then spend: sum this session's assistant-message costs (entries after `state.sessionStartEntryCount` whose model id belongs to our three providers). Verify the usage field first: `grep -n "usage" node_modules/@earendil-works/pi-ai/dist/types.d.ts | head -20` — `AssistantMessage.usage: Usage` with `usage.cost.total` lives there (~L248-285; there is NO dist/core/messages.d.ts); reach the message via `SessionMessageEntry.message` (session-manager.d.ts:23-26). Sum `usage.cost.total`. Store into `state.spendUsd`; when `cfg.spendWarnUsd` set, not yet `state.spendWarned`, and spend crosses it → notify + `state.spendWarned = true`.
 
 - [ ] **Step 6: `session_shutdown`** — `stopWatch()` in addition to the existing timer cleanup.
 
@@ -2498,13 +2634,19 @@ function settleWatch(ctx: ExtensionContext, phase: "credited" | "unknown" | "dro
 
 - [ ] **Step 8: `/nullsink` command** — subcommands: no-arg → **open the hub** (TUI) or dialog menu (non-TUI); `balance`, `models`, `setup`, `help` kept; NEW: `config` → hub (Settings tab), `topup` → hub with wizard pre-opened, `pay` → hub with pay screen (when an order exists, else notify), `mint` → hub with mint flow triggered, `incognito` → immediate `goIncognito` + notify.
 
+- [ ] **Step 8b: non-TUI parity (spec §Non-TUI fallback)** — when `ctx.mode !== "tui"`:
+  - `topup <usd> [rail]` runs the buy directly (validate 2–100; default rail from the rails cache) and PRINTS the pay details as plain lines: address, verbatim `amount unit`, `pay_uri`, the Trocador URL, and the `qrLines(payUri)` block (text QR works anywhere); the watcher still runs. Missing amount → one `ctx.ui.input` prompt when `ctx.hasUI` (RPC), else a usage line (print mode).
+  - `mint` prints the full token once (with the money warning), saves it exactly like the TUI path (including the switch-active-profile rule from Step 9), then prints the topup usage hint.
+  - `pay` re-prints the same pay-details block for the pending order.
+  - `config` extends the EXISTING dialog menu with one entry per new field: low-balance warning, session-spend warning, show spend, refresh interval, default model (`select` over model ids), default thinking, the three provider toggles, incognito — each editing via `input`/`select` and routing through the SAME `apply` side effects as the hub host.
+
 - [ ] **Step 9: HubHost implementation** (inside index.ts) — `data()` assembles `HubData` from `state` + env + `pi` model info (`currentProviderKey` from the session model's provider vs `PROVIDER_IDS`); `apply(effect)`:
-  - `set` → write field into `state.cfg` (respecting field name = row id; `refreshSeconds` through `clampRefreshSeconds`), `saveConfigV2`, then side effects: `baseUrl` → re-register providers; `display` → re-render; any → `renderStatus`.
+  - `set` → write field into `state.cfg` (field name = row id; `refreshSeconds` through `clampRefreshSeconds`), `saveConfigV2`, then side effects: `baseUrl` → re-register providers; `display` → re-render; any → `renderStatus`. **Exception — `apiKey` is per-profile:** write to `cfg.profiles[cfg.activeProfile].apiKey` (NEVER top-level — `StoredConfigV2` has no `apiKey`; a top-level write is silently lost on reload when the active profile already holds a key), then when `state.injectedEnv` or `!process.env[API_KEY_ENV]` → `process.env[API_KEY_ENV] = value; state.injectedEnv = true`; save; force `refreshBalance(ctx, true)` (spec cadence: "after config edits and wallet actions").
   - `toggleProvider` → update `cfg.providers`, save, register/unregister that provider (`pi.unregisterProvider(PROVIDER_IDS[p])` / register from `buildProviders` output).
   - `setDefaultModel` → `cfg.defaultModel = id`, save, notify "applies at next session start".
-  - `quote` → `walletApi().buy(hashToken(key), creditUsd, rail)`; on success: build `PendingOrder` (incl. `baseUrl: currentEndpoints().origin`, `createdAt: Date.now()`), store in active profile, save, `startWatch`, push state override `{ wizard: { step: "pay" } }`; on `BuyError` → override `{ wizard: { step: "error", message: buyErrorMessage(code) } }`. No key → error step with "mint or paste a key first".
+  - `quote` → key = `resolveRawKey()` (env or ACTIVE profile — the mint rule below guarantees this is the freshly minted key right after a reveal); `walletApi().buy(hashToken(key), creditUsd, rail)`; on success: build `PendingOrder` (incl. `baseUrl: currentEndpoints().site`, `createdAt: Date.now()`), store in the active profile, save, `startWatch`, push state override `{ wizard: { step: "pay" } }`; on `BuyError` → override `{ wizard: { step: "error", message: buyErrorMessage(code) } }`. No key → error step with "mint or paste a key first".
   - `openTrocador` → `openUrl(trocadorSwapUrl(order))` (existing `openUrl` helper).
-  - `action` ids: `balance` → force refresh; `setup` → close hub then `runSetup`; `clear-config` → `clearConfig()` + reset `state.cfg` + unset injected env; `mint` → `generateToken()` → save into a free profile slot (active if keyless, else `key-2`, `key-3`, …) → override `{ reveal: token }`; `mint-saved` → override `{ wizard: { step: "amount", cursor: 1, custom: "" } }`; `profile-switch:<name>` → set active, save, re-inject env key (when we injected), refresh balance, restart watch for that profile's order; `profile-new:<name>` → create empty profile + switch; `profile-delete` → delete active profile (fall back to first remaining or `default`), save.
+  - `action` ids: `balance` → force refresh; `setup` → close hub then `runSetup`; `clear-config` → `clearConfig()` + reset `state.cfg` + unset injected env; **`mint`** → `generateToken()` → save into the active profile if keyless, else into a fresh `key-2`/`key-3`/… profile AND **switch `cfg.activeProfile` to that slot** (re-inject env when `state.injectedEnv` or env unset; reset `state.balance` and `state.watch` for the new profile) so the follow-up wizard funds the key just revealed — never the old profile's; then override `{ reveal: token }`; `mint-saved` → override `{ wizard: { step: "amount", cursor: 1, custom: "" } }`; `profile-switch:<name>` → set active, save, re-inject env key (when we injected), refresh balance, restart watch for that profile's order; `profile-new:<name>` → create empty profile + switch (same re-inject/refresh path); `profile-rename:<name>` → move `profiles[active]` to the new name (notify + no-op when the name exists), update `activeProfile`, save; `profile-delete` → delete active profile (fall back to first remaining or `default`), save, re-inject/refresh.
 
 - [ ] **Step 10: Gate** — `bun run typecheck` clean; `bun test` green (all suites). Commit: `git commit -am "feat: wire hub, wallet, incognito, spend, provider toggles into the extension"`
 
@@ -2518,7 +2660,7 @@ function settleWatch(ctx: ExtensionContext, phase: "credited" | "unknown" | "dro
 
 **Interfaces:**
 - Consumes: `WalletApi`, watch reducer functions, `hashToken`, `PendingOrder`.
-- Produces: `startMockNullsink(script: MockScript): { origin: string; stop(): void; seen: { buys: number; statusPolls: number } }` where `MockScript = { statusSequence: OrderStatusRes[]; balanceAfterClose?: number; balanceBefore?: number; buyResponse?: "ok" | { error: string; status: number } }`.
+- Produces: `startMockNullsink(script: MockScript): { origin: string; stop(): void; seen: { buys: number; statusPolls: number } }` where `MockScript = { statusSequence: OrderStatusRes[]; balanceAfterClose?: number; balanceBefore?: number; buyResponse?: "ok" | { error: string; status: number }; malformed?: boolean }`.
 
 - [ ] **Step 1: Implement the mock**
 
@@ -2532,6 +2674,7 @@ export interface MockScript {
   balanceBefore?: number;                 // before the order closes (undefined → 401)
   balanceAfterClose?: number;             // once the sequence is exhausted
   buyResponse?: "ok" | { error: string; status: number };
+  malformed?: boolean;                    // /order-status returns non-JSON garbage
 }
 
 export function startMockNullsink(script: MockScript) {
@@ -2553,6 +2696,7 @@ export function startMockNullsink(script: MockScript) {
         });
       }
       if (path === "/order-status") {
+        if (script.malformed) return new Response("not json {", { headers: { "content-type": "application/json" } });
         const i = Math.min(seen.statusPolls, script.statusSequence.length - 1);
         seen.statusPolls++;
         return Response.json(script.statusSequence[i]);
@@ -2665,10 +2809,41 @@ describe("full top-up flow", () => {
     await expect(api.buy(hashToken(KEY), 25)).rejects.toMatchObject({ code: "rate_limited", status: 429 });
     expect(mock.seen.buys).toBe(1);
   });
+
+  test("malformed /order-status response throws (caller treats as transient, next tick retries)", async () => {
+    mock = startMockNullsink({ statusSequence: [{ state: "waiting" }], malformed: true });
+    const api = new WalletApi(mock.origin);
+    await expect(api.orderStatus("a".repeat(64))).rejects.toBeDefined();
+  });
+
+  test("resume-from-config: PendingOrder survives a serialize/parse round trip and drop rules still apply", async () => {
+    mock = startMockNullsink({ statusSequence: [{ state: "confirming", confirmations: 7, required: 10 }] });
+    const api = new WalletApi(mock.origin);
+    const q = await api.buy(hashToken(KEY), 10, "monero");
+    const order: PendingOrder = {
+      hash: hashToken(KEY), baseUrl: mock.origin, creditUsd: 10, rail: "monero", unit: q.unit,
+      payTo: q.payTo, amount: q.amount, payUri: q.payUri, expiresAt: q.expiresAt, createdAt: Date.now(),
+    };
+    // Persist exactly as the extension does, reload, and resume the watch on the parsed copy.
+    const cfg = emptyConfigV2();
+    cfg.profiles.default = { apiKey: KEY, pendingOrder: order };
+    const reloaded = parseConfigV2(JSON.parse(JSON.stringify(serializeConfigV2(cfg))))!;
+    const restored = reloaded.profiles.default!.pendingOrder!;
+    expect(restored).toEqual(order); // verbatim amount string included
+    expect(orderDropReason(restored, Date.now(), mock.origin)).toBeNull();
+    expect(orderDropReason(restored, Date.now() + ORDER_BACKSTOP_MS + 1, mock.origin)).toBe("stale");
+    expect(orderDropReason(restored, Date.now(), "https://other.example")).toBe("instance-mismatch");
+    const status = await api.orderStatus(restored.hash);
+    expect(reduceStatus(initialWatchState(), status)).toEqual({ phase: "confirming", confirmations: 7, required: 10 });
+  });
+
+  // Imports for the two tests above (add to the file's import block):
+  // import { emptyConfigV2, parseConfigV2, serializeConfigV2 } from "../src/config.ts";
+  // import { ORDER_BACKSTOP_MS } from "../src/wallet.ts";
 });
 ```
 
-- [ ] **Step 3: Run** — `bun test test/wallet-flow.test.ts` → PASS. **Step 4: Commit** — `git commit -am "test: mock-nullsink integration — full top-up, first-fund, reaped, rate-limited paths"`
+- [ ] **Step 3: Run** — `bun test test/wallet-flow.test.ts` → PASS. **Step 4: Commit** — `git commit -am "test: mock-nullsink integration — top-up, first-fund, reaped, rate-limited, malformed, resume paths"`
 
 ---
 
@@ -2691,8 +2866,8 @@ describe("full top-up flow", () => {
   1. `cd ~/dev/Method6/Piexus/Clients/Nullsink && pi` (the `.pi/settings.json` dev link loads the extension).
   2. `/nullsink` → hub renders; tab through Settings/Wallet/Models; edit low-balance to `2`; confirm `~/.pi/agent/nullsink.json` updated with `"lowBalanceUsd": 2` and file mode `0600`.
   3. Wallet → Mint new key → reveal screen → enter → amount step appears; `esc` out; key present in config file; `/model` still lists nullsink models.
-  4. Settings → Incognito → `always`; quit; `pi` fresh → notification appears and `pi` session list gains NO new session; flip back to `off`.
-  5. `/nullsink incognito` in a fresh session → same check.
+  4. Settings → Incognito → `always`; quit; `pi` fresh → notification appears and `pi` session list gains NO new session.
+  5. Still with `always` on: resume the previous session (`pi --continue`) → expect the "resumed session is still being saved" notice, NO swap, transcript file still growing. Then `/nullsink incognito` in a fresh session → badge appears, no new session file. Flip `always` back to `off`.
   6. Provider toggle: switch OpenAI off → `/model` hides GPT models; current-model provider row shows locked.
   7. (With a funded or fundable key, $2) `/nullsink topup` → real QR renders; pay; watch `⧗ confirming n/m` tick; kill the terminal mid-confirmation; reopen → ticker resumes; credit lands → balance rises.
 - [ ] **Step 5: Commit + push** — `git commit -am "docs: v0.2 README — hub, terminal top-up, incognito; bump to 0.2.0" && git push`. npm publish stays a SEPARATE, explicitly-approved step (account/owner decision pending).
@@ -2701,6 +2876,7 @@ describe("full top-up flow", () => {
 
 ## Plan Self-Review Notes
 
-- Spec coverage: mint (T1/T12), top-up wizard + QR + ticker + resume (T4–T6, T8–T9, T12–T13), Trocador (T4/T9), hub tabs (T8–T10), profiles (T2/T8/T12), incognito (T11/T12), default model + thinking (T8/T12), provider toggles (T8/T12), spend (T3/T12), thresholds/refresh (T2/T3/T8), non-TUI fallback (T12 step 8 — dialog menu retained), README boundary + hash discipline (T14).
-- Deliberate deviations from the spec: none. Deviations from v0.1 behavior: API-key paste in the hub REJECTS checksum-failing keys outright (the guided-setup dialog keeps its save-anyway confirm); justified by the checksum now existing (T1) — a failing checksum is a typo by construction.
-- Verify-on-read anchors (external types that may drift): `BalanceResult.balanceUsd` field name (T4/T5), `SessionEntry` message discriminant (T11), per-message `usage` cost shape (T12 step 5), `uqr` export name (T6), `Component`/`tui.rows` shape (T10). Each has an explicit check step; none block other tasks.
+- Spec coverage: mint (T1/T12), top-up wizard + QR + ticker + resume (T4–T6, T8–T9, T12–T13), Trocador (T4/T9), hub tabs + pick-default + ←→ (T8–T10), profiles incl. rename (T2/T8/T12), incognito (T11/T12), default model + thinking (T8/T12), provider toggles (T8/T12), spend (T3/T12), thresholds/refresh (T2/T3/T8), non-TUI parity (T12 step 8b), README boundary + hash discipline (T14).
+- Deliberate deviations from the spec: none. The hub API-key editor implements the spec's confirm-on-mismatch (second consecutive enter saves anyway), matching the guided setup's escape hatch.
+- Review round (2 independent reviewers, 2026-07-02): all BLOCKER/MAJOR findings fixed in place — `BalanceResult` real shape (no `display`; format via USD_FMT), `newSession` context probe for incognito-always, T2 gate order (LOW_BALANCE_USD deferred to T3; test cleanup targeted at config-ui.test.ts), per-profile apiKey `set` handling + env re-injection, `ctx.modelRegistry.find` lookup, mint-switches-active-profile rule, rails prefetch at session start, `Endpoints.site`, `xhigh` thinking level, pi-ai usage anchor, `tui.terminal.rows`, required `invalidate()`, transient-balance no-settle rule, profile rename, non-TUI parity step, malformed + resume-from-config tests, QR golden fixture, resumed-always smoke item.
+- Verify-on-read anchors (external types that may drift): `SessionEntry` message discriminant (T11), `usage.cost.total` path (T12 step 5, pi-ai types), `uqr` export name (T6), `Component` extras beyond `invalidate` (T10), `ThinkingLevel` union incl. `xhigh` (T8). Each has an explicit check step; none block other tasks.
