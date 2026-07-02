@@ -1,14 +1,16 @@
 // Incognito: stop pi from persisting the transcript. Rides pi's own primitives —
-// getSessionFile() === undefined IS the native --no-session state; our swap reproduces it
-// for a session started without the flag. Public-but-internal API (setSessionFile), so the
-// whole effect is try/catch'd and release-gated by a live smoke test.
+// getSessionFile() === undefined is the native --no-session state; "/dev/null" is our
+// swap (goIncognito points the session file there). isIncognito treats both as incognito.
+// Public-but-internal API (setSessionFile), so the whole effect is try/catch'd and
+// release-gated by a live smoke test.
 //
 // Boundary (also in README): this stops the TRANSCRIPT. Terminal scrollback, shell history,
 // and files the agent edits are out of scope. Config writes (key, orders) continue by design.
 import { rmSync } from "node:fs";
 
 export function isIncognito(ctx: { sessionManager: { getSessionFile(): string | undefined } }): boolean {
-  return ctx.sessionManager.getSessionFile() === undefined;
+  const f = ctx.sessionManager.getSessionFile();
+  return f === undefined || f === "/dev/null";
 }
 
 // A session is fresh while it holds no real messages — replacing it can't lose work.
@@ -31,15 +33,22 @@ type NewSessionCapable = {
 };
 
 export async function goIncognito(ctx: unknown): Promise<boolean> {
-  const c = ctx as Partial<NewSessionCapable>;
-  if (typeof c.newSession !== "function") return false;
+  const c = ctx as Partial<NewSessionCapable> | null | undefined;
+  if (typeof c?.newSession !== "function") return false;
   try {
     let swapped = false;
     await c.newSession({
       setup: async (sm) => {
         const stub = sm.getSessionFile();
         sm.setSessionFile("/dev/null");
-        if (stub && stub !== "/dev/null") rmSync(stub, { force: true });
+        if (stub && stub !== "/dev/null") {
+          try {
+            rmSync(stub, { force: true });
+          } catch {
+            // best-effort: an orphaned stub is cosmetic; aborting pi's
+            // session-replacement tail is not.
+          }
+        }
         swapped = true;
       },
     });
