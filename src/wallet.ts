@@ -1,7 +1,7 @@
 // nullsink money API — the four public endpoints the purchase UI uses, plus the pure order-watch
 // reducer (below). Contract: docs/2026-07-02-terminal-client-design.md §nullsink API contract.
 // Amounts stay verbatim strings end to end; /buy and /order-status only ever see the token HASH.
-import { type BalanceResult, interpretBalance, type PendingOrder } from "./config.ts";
+import { type BalanceResult, interpretBalance, type OrderReadout, type PendingOrder } from "./config.ts";
 
 export const BUY_MIN_USD = 2;
 export const BUY_MAX_USD = 100;
@@ -148,4 +148,59 @@ export class WalletApi {
     }
     return interpretBalance(res.status, body);
   }
+}
+
+// --- order watching (pure) ---------------------------------------------------
+// The extension keeps watching a paid-for order across sessions. Server truth:
+// `closed` is ambiguous (credited / reaped / never existed), so the caller resolves
+// it against a fresh /balance. The 24h figure mirrors the server's stuck-order backstop.
+
+export const ORDER_BACKSTOP_MS = 24 * 3600 * 1000;
+
+export type WatchPhase = "waiting" | "confirming" | "finalizing" | "credited" | "unknown" | "dropped";
+export interface WatchState {
+  phase: WatchPhase;
+  confirmations?: number;
+  required?: number;
+  dropReason?: "stale" | "instance-mismatch";
+}
+
+export function initialWatchState(): WatchState {
+  return { phase: "waiting" };
+}
+
+export function orderDropReason(
+  order: PendingOrder,
+  nowMs: number,
+  currentBaseUrl: string,
+): "stale" | "instance-mismatch" | null {
+  if (order.baseUrl !== currentBaseUrl) return "instance-mismatch";
+  if (nowMs - order.createdAt > ORDER_BACKSTOP_MS) return "stale";
+  return null;
+}
+
+export function reduceStatus(prev: WatchState, s: OrderStatusRes): WatchState {
+  switch (s.state) {
+    case "waiting":
+      return { phase: "waiting" };
+    case "confirming":
+      return { phase: "confirming", confirmations: s.confirmations, required: s.required };
+    case "finalizing":
+      return { phase: "finalizing" };
+    case "closed":
+      return prev; // ambiguous — caller resolves via resolveClosed(balance)
+  }
+}
+
+export function resolveClosed(lastKnownUsd: number | undefined, fresh: BalanceResult): "credited" | "unknown" {
+  if (fresh.kind !== "ok" || fresh.balanceUsd === undefined) return "unknown";
+  if (lastKnownUsd === undefined) return "credited"; // was unfunded/unknown; any balance = the credit landed
+  return fresh.balanceUsd > lastKnownUsd ? "credited" : "unknown";
+}
+
+export function toOrderReadout(w: WatchState): OrderReadout | undefined {
+  if (w.phase === "waiting" || w.phase === "confirming" || w.phase === "finalizing") {
+    return { phase: w.phase, confirmations: w.confirmations, required: w.required };
+  }
+  return undefined;
 }
