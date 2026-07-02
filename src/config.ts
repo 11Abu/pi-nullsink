@@ -149,9 +149,6 @@ export function interpretBalance(status: number, body: unknown): BalanceResult {
 // below; index.ts wires them to pi. Everything here is pure so the precedence + render matrix is
 // unit-testable without a live runtime.
 
-// Below this the statusline flags a low balance and nudges a top-up.
-export const LOW_BALANCE_USD = 1;
-
 // How the balance readout is surfaced. `both` shows the footer line AND the widget; `off` hides both.
 export const DISPLAY_MODES = ["statusline", "widget", "both", "off"] as const;
 export type DisplayMode = (typeof DISPLAY_MODES)[number];
@@ -330,34 +327,54 @@ export function resolveBaseUrlValue(envUrl?: string | null, fileUrl?: string | n
   return envUrl?.trim() || fileUrl?.trim() || undefined;
 }
 
-// Snapshot the status renderers consume. `configured` = a key is present (env or saved); `balance` is
-// the last /balance result (undefined until first fetch); `loading` = a fetch is in flight.
+export interface OrderReadout {
+  phase: "waiting" | "confirming" | "finalizing";
+  confirmations?: number;
+  required?: number;
+}
+
+export const formatUsd = (n: number): string => USD_FMT.format(n);
+
+export function renderOrderSegment(o: OrderReadout): string {
+  if (o.phase === "confirming" && o.confirmations !== undefined && o.required !== undefined) {
+    return `⧗ confirming ${o.confirmations}/${o.required}`;
+  }
+  return `⧗ ${o.phase}`;
+}
+
 export interface StatusState {
   configured: boolean;
-  loading: boolean;
   balance?: BalanceResult;
-  keyMasked?: string;
+  loading?: boolean;
+  lowBalanceUsd: number;
+  incognito?: boolean;
+  order?: OrderReadout;
+  spendUsd?: number;
 }
 
-// The single footer line. Order: no key → known balance (low vs ok) → 401 unfunded → error → mid-fetch
-// → configured-but-not-yet-fetched. Always returns a string; the caller decides whether to show it.
-export function renderStatusLine(s: StatusState): string {
-  if (!s.configured) return "nullsink ○ no key · /nullsink setup";
-  if (s.balance?.kind === "ok" && s.balance.balanceUsd !== undefined) {
-    const amt = USD_FMT.format(s.balance.balanceUsd);
-    return s.balance.balanceUsd < LOW_BALANCE_USD ? `nullsink ⚠ ${amt} · top up` : `nullsink ● ${amt}`;
+// Core readout: no key → balance (low vs ok) → 401 unfunded → error → mid-fetch → not-yet-fetched.
+// BalanceResult's real shape is { kind, balanceUsd?, message } (src/config.ts) — amounts are
+// formatted HERE via USD_FMT, never read from a display field (none exists).
+function renderCore(s: StatusState): string {
+  if (!s.configured) return "○ no key · /nullsink setup";
+  const b = s.balance;
+  if (b?.kind === "ok" && b.balanceUsd !== undefined) {
+    const usd = USD_FMT.format(b.balanceUsd);
+    return b.balanceUsd < s.lowBalanceUsd ? `⚠ ${usd} · top up` : `● ${usd}`;
   }
-  if (s.balance?.kind === "unknown") return "nullsink ⚠ unfunded · top up";
-  if (s.balance?.kind === "error") return "nullsink ⚠ balance unavailable";
-  if (s.loading) return "nullsink … checking";
-  return "nullsink ● key set";
+  if (b?.kind === "unknown") return "⚠ unfunded · /nullsink topup";
+  if (b?.kind === "error") return "⚠ balance unavailable";
+  return s.loading ? "… checking balance" : "● balance not checked";
 }
 
-// The two-line widget: the status line, then a key/action line. Reuses renderStatusLine so the two
-// display modes never disagree on the headline.
+export function renderStatusLine(s: StatusState): string {
+  const parts = [`nullsink ${renderCore(s)}`];
+  if (s.spendUsd !== undefined) parts.push(`spent ${USD_FMT.format(s.spendUsd)}`);
+  if (s.order) parts.push(renderOrderSegment(s.order));
+  const line = parts.join(" · ");
+  return s.incognito ? `⦿ incognito · ${line}` : line;
+}
+
 export function renderWidget(s: StatusState): string[] {
-  const second = s.configured
-    ? `${s.keyMasked ?? "key set"} · /nullsink config`
-    : "mint & fund at nullsink.is";
-  return [renderStatusLine(s), second];
+  return [renderStatusLine(s), "  /nullsink — settings · wallet · models"];
 }

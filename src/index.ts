@@ -15,6 +15,7 @@ import {
   type BalanceResult,
   buildProviders,
   DISPLAY_MODES,
+  DEFAULTS,
   type DisplayMode,
   emptyConfigV2,
   type Endpoints,
@@ -144,7 +145,7 @@ function renderStatus(ctx: ExtensionContext): void {
     configured: Boolean(key),
     loading: state.loading,
     balance: state.balance,
-    keyMasked: key ? maskKey(key) : undefined,
+    lowBalanceUsd: DEFAULTS.lowBalanceUsd,
   };
   const showLine = state.display === "statusline" || state.display === "both";
   const showWidget = state.display === "widget" || state.display === "both";
