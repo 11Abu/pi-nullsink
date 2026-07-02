@@ -1057,9 +1057,16 @@ async function runConfigMenuNonTui(ctx: ExtensionCommandContext): Promise<void> 
   }
 }
 
-async function toggleFromMenu(ctx: ExtensionContext, host: HubHost, provider: ProviderKey): Promise<void> {
+async function toggleFromMenu(ctx: ExtensionCommandContext, host: HubHost, provider: ProviderKey): Promise<void> {
   const picked = await ctx.ui.select(`${provider} models`, ["on", "off"]);
-  if (picked) await host.apply({ kind: "toggleProvider", provider, on: picked === "on" });
+  if (!picked) return;
+  const on = picked === "on";
+  // Mirror the hub guard: never disable the provider serving the current session model.
+  if (!on && ctx.model && keyForProviderId(ctx.model.provider) === provider) {
+    emit(ctx, "this provider serves the current session model — switch model first", "warning");
+    return;
+  }
+  await host.apply({ kind: "toggleProvider", provider, on });
 }
 
 // --- text output ------------------------------------------------------------
