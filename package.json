@@ -16,8 +16,7 @@
   "homepage": "https://nullsink.is",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nullsink/nullsink.git",
-    "directory": "pi-nullsink"
+    "url": "git+https://github.com/11Abu/pi-nullsink.git"
   },
   "type": "module",
   "files": [
