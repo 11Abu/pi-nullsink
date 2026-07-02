@@ -157,6 +157,7 @@ describe("renderStatusLine v2 decorations", () => {
     const low = { kind: "ok", balanceUsd: 2.4, message: "" } as const;
     expect(renderStatusLine({ configured: true, lowBalanceUsd: 5, balance: low })).toContain("⚠");
     expect(renderStatusLine({ configured: true, lowBalanceUsd: 1, balance: low })).toContain("●");
+    expect(renderStatusLine({ configured: true, lowBalanceUsd: 5, balance: { kind: "ok", balanceUsd: 5, message: "" } })).toContain("●");
   });
   test("all decorations compose in order", () => {
     expect(renderStatusLine({ ...base, incognito: true, spendUsd: 1.2, order: { phase: "waiting" } }))
