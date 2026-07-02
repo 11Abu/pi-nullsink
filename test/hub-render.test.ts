@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { ModelsFile, PendingOrder, StoredConfigV2 } from "../src/config.ts";
 import { emptyConfigV2 } from "../src/config.ts";
 import modelsData from "../src/models.json";
-import { initialHubState, type HubData, type HubState } from "../src/ui/hub-model.ts";
-import { renderHub, renderPayScreen } from "../src/ui/hub-render.ts";
+import { initialHubState, modelRows, walletRows, type HubData, type HubState } from "../src/ui/hub-model.ts";
+import { renderHub, renderModelsTab, renderPayScreen } from "../src/ui/hub-render.ts";
 
 const theme = { fg: (_c: string, s: string) => s };
 const models = modelsData as ModelsFile;
@@ -47,6 +47,24 @@ describe("renderHub", () => {
     expect(text).toContain("$10");
     expect(text).toContain("❯ $25");
     expect(text).toContain("custom…");
+  });
+  test("rename-profile editor line renders under the focused row", () => {
+    const d = data();
+    const idx = walletRows(d, 0).findIndex((r) => r.id === "profile-rename");
+    expect(idx).toBeGreaterThan(-1);
+    const base = initialHubState();
+    const s: HubState = { ...base, tab: "wallet", cursor: { ...base.cursor, wallet: idx }, editing: { rowId: "profile-rename", buffer: "work" } };
+    const text = renderHub(s, d, 80, 30, theme).join("\n");
+    expect(text).toContain("▸ work█");
+  });
+  test("models tab scroll keeps the last row visible despite provider header lines", () => {
+    const d = data();
+    const rows = modelRows(d.models, "", d.cfg.providers ?? { anthropic: true, openai: true, tinfoil: true });
+    const last = rows[rows.length - 1]!;
+    const base = initialHubState();
+    const s: HubState = { ...base, tab: "models", cursor: { ...base.cursor, models: rows.length - 1 } };
+    const text = renderModelsTab(s, d, 100, 12, theme).join("\n");
+    expect(text).toContain(last.id);
   });
 });
 

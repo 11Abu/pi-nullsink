@@ -22,20 +22,22 @@ export function renderHub(state: HubState, d: HubData, width: number, height: nu
   if (state.reveal !== null) {
     const body = [
       "", theme.fg("accent", "  Your new nullsink key — save it now, it is shown ONCE:"), "",
+      // The key line is INTENTIONALLY not clamped — truncating a shown-once secret would destroy it.
       `  ${state.reveal}`, "",
       theme.fg("warning", "  This key IS your money. Anyone holding it can spend it. No refunds."),
       theme.fg("muted", "  It is saved to ~/.pi/agent/nullsink.json (mode 0600)."), "",
       theme.fg("accent", "  press enter once you've stored it safely"),
     ];
-    return [renderTabBar(state.tab, theme), theme.fg("dim", "─".repeat(width)), ...body];
+    return [renderTabBar(state.tab, theme), theme.fg("dim", "─".repeat(Math.max(0, width))), ...body];
   }
+  const now = Date.now();
   const body: string[] =
     state.tab === "settings" ? renderSettingsTab(state, d, width, height - 5, theme)
-    : state.tab === "wallet" ? renderWalletTab(state, d, width, height - 5, theme, Date.now())
+    : state.tab === "wallet" ? renderWalletTab(state, d, width, height - 5, theme, now)
     : renderModelsTab(state, d, width, height - 5, theme);
   const lines = [renderTabBar(state.tab, theme), theme.fg("dim", "─".repeat(Math.max(0, width))), ...body];
   lines.push(theme.fg("dim", "─".repeat(Math.max(0, width))));
-  lines.push(theme.fg("muted", padCell(footerDescription(state, d), width)));
+  lines.push(theme.fg("muted", padCell(footerDescription(state, d, now), width)));
   lines.push(theme.fg("dim", padCell(HINTS, width)));
   return lines.map((l) => clampLine(l, width));
 }
@@ -110,7 +112,7 @@ export function renderWalletTab(state: HubState, d: HubData, width: number, heig
     const r = rows[i]!;
     const suffix = state.confirm === r.id ? theme.fg("warning", "  press enter again to confirm") : "";
     lines.push(renderRow(r, i === cursor, theme) + suffix);
-    if (i === cursor && state.editing?.rowId === "profile-new") {
+    if (i === cursor && state.editing && (state.editing.rowId === "profile-new" || state.editing.rowId === "profile-rename")) {
       lines.push(`    ▸ ${state.editing.buffer}█`);
       if (state.editing.error) lines.push(theme.fg("warning", `    ✗ ${state.editing.error}`));
     }
@@ -165,22 +167,24 @@ export function renderModelsTab(state: HubState, d: HubData, width: number, heig
   const lines: string[] = [`filter: ${state.filter}█`, ""];
   let lastProvider = "";
   const body: string[] = [];
+  let cursorLine = 0;
   for (let i = 0; i < rows.length; i++) {
     const m = rows[i]!;
     if (m.provider !== lastProvider) {
       body.push(theme.fg("accent", m.provider));
       lastProvider = m.provider;
     }
+    if (i === cursor) cursorLine = body.length; // LINE index (rows + interleaved provider headers), not row index
     const isDefault = d.cfg.defaultModel === m.id;
     const cell = `${i === cursor ? "❯ " : "  "}${padCell(m.id, 34)}${padCell(`${Math.round(m.contextWindow / 1000)}k`, 8)}$${m.input}/$${m.output} MTok${isDefault ? "  ← default" : ""}`;
     body.push(i === cursor ? theme.fg("accent", cell) : cell);
   }
-  const top = clampScroll(cursor, body.length, height - 2, state.top.models);
+  const top = clampScroll(cursorLine, body.length, height - 2, state.top.models);
   lines.push(...body.slice(top, top + height - 2));
   return lines.map((l) => clampLine(l, width));
 }
 
-function footerDescription(state: HubState, d: HubData): string {
+function footerDescription(state: HubState, d: HubData, now: number): string {
   if (state.editing?.error) return `✗ ${state.editing.error}`;
   if (state.wizard) {
     if (state.wizard.step === "amount") return `$${2}–$${100} per top-up · type digits for a custom amount`;
@@ -189,7 +193,7 @@ function footerDescription(state: HubState, d: HubData): string {
     return "";
   }
   if (state.reveal) return "this key IS the money — it is saved to ~/.pi/agent/nullsink.json (0600)";
-  const rows = state.tab === "settings" ? settingsRows(d) : state.tab === "wallet" ? walletRows(d) : [];
+  const rows = state.tab === "settings" ? settingsRows(d) : state.tab === "wallet" ? walletRows(d, now) : [];
   return rows[Math.min(state.cursor[state.tab], Math.max(0, rows.length - 1))]?.description ?? "";
 }
 
