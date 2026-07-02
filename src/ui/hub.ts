@@ -15,6 +15,8 @@ export interface HubHost {
   onRepaint(repaint: () => void): void;
   /** Mint flow: host sets the freshly generated token to reveal, wizard to open next. */
   takeStateOverride(): Partial<HubState> | null;
+  /** Host receives a closer it can call to dismiss the hub programmatically (e.g. "Re-run setup"). */
+  onClose?(close: () => void): void;
 }
 
 export function hubKeyFromData(data: string): KeyName | null {
@@ -31,12 +33,18 @@ export function hubKeyFromData(data: string): KeyName | null {
   return null;
 }
 
-export function openHub(ctx: ExtensionContext, host: HubHost): Promise<void> {
+export function openHub(ctx: ExtensionContext, host: HubHost, initial?: Partial<HubState>): Promise<void> {
   return ctx.ui.custom<void>((tui, theme, _kb, done) => {
-    let state: HubState = initialHubState();
+    let state: HubState = { ...initialHubState(), ...(initial ?? {}) };
     let closed = false;
     let cachedLines: string[] | undefined;
 
+    const close = () => {
+      if (!closed) {
+        closed = true;
+        done(undefined);
+      }
+    };
     const repaint = () => {
       const override = host.takeStateOverride();
       if (override) state = { ...state, ...override };
@@ -44,14 +52,12 @@ export function openHub(ctx: ExtensionContext, host: HubHost): Promise<void> {
       tui.requestRender();
     };
     host.onRepaint(repaint);
+    host.onClose?.(close);
 
     async function dispatch(effects: HubEffect[]) {
       for (const e of effects) {
         if (e.kind === "close") {
-          if (!closed) {
-            closed = true;
-            done(undefined);
-          }
+          close();
           return;
         }
         await host.apply(e);
