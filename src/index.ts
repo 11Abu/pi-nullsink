@@ -27,8 +27,8 @@ import {
   resolveBaseUrlValue,
   resolveEndpoints,
   type StatusState,
-  TOKEN_RE,
 } from "./config.ts";
+import { isValidToken } from "./token.ts";
 import { clearConfig, loadConfig, saveConfig } from "./store.ts";
 import modelsData from "./models.json";
 
@@ -228,9 +228,9 @@ async function runSetup(ctx: ExtensionContext, auto: boolean): Promise<void> {
 }
 
 // Persist a key, enforce 0600, make it live for this session, refetch balance. Confirms on a
-// shape mismatch (typo guard, not the checksum) rather than silently saving garbage.
+// shape-or-checksum mismatch rather than silently saving garbage.
 async function saveKey(ctx: ExtensionContext, key: string): Promise<void> {
-  if (!TOKEN_RE.test(key) && ctx.hasUI) {
+  if (!isValidToken(key) && ctx.hasUI) {
     const ok = await ctx.ui.confirm("Unusual key", "That doesn't match the 0sink_ format. Save anyway?");
     if (!ok) return;
   }

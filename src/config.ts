@@ -14,10 +14,6 @@ export const BASE_URL_ENV = "NULLSINK_BASE_URL";
 // The public instance. A self-host sets NULLSINK_BASE_URL to its own origin.
 export const NULLSINK_DEFAULT_BASE_URL = "https://nullsink.is";
 
-// nullsink token shape (see core/src/token-format.ts): "0sink_" + 43 random + 4 checksum chars.
-// Shape-only guard for a friendly "that doesn't look like a key" warning — NOT the checksum check.
-export const TOKEN_RE = /^0sink_[A-Za-z0-9_-]{47}$/;
-
 // The provider registration keys. Three providers because nullsink speaks two wire formats and
 // groups models into trust tiers; splitting them mirrors the /models page and keeps the /model
 // picker legible.

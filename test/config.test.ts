@@ -4,7 +4,6 @@ import {
   interpretBalance,
   PROVIDER_IDS,
   resolveEndpoints,
-  TOKEN_RE,
   type Endpoints,
   type ModelsFile,
   type RawModel,
@@ -179,34 +178,5 @@ describe("interpretBalance", () => {
   ];
   test.each(malformed)("200 with %s -> error", (_label, body) => {
     expect(interpretBalance(200, body).kind).toBe("error");
-  });
-});
-
-describe("TOKEN_RE", () => {
-  // 47 chars covering every allowed class: lower, upper, digit, underscore, hyphen.
-  const body = "aZ9_-".repeat(9) + "aZ";
-
-  test("body fixture is exactly 47 legal chars", () => {
-    expect(body.length).toBe(47);
-  });
-
-  test("accepts a well-formed 0sink_ token", () => {
-    expect(TOKEN_RE.test(`0sink_${body}`)).toBe(true);
-  });
-
-  test("rejects the wrong prefix", () => {
-    expect(TOKEN_RE.test(`1sink_${body}`)).toBe(false);
-  });
-
-  test("rejects a body one char too short (46)", () => {
-    expect(TOKEN_RE.test(`0sink_${"a".repeat(46)}`)).toBe(false);
-  });
-
-  test("rejects a body one char too long (48)", () => {
-    expect(TOKEN_RE.test(`0sink_${"a".repeat(48)}`)).toBe(false);
-  });
-
-  test("rejects an illegal character", () => {
-    expect(TOKEN_RE.test(`0sink_${"a".repeat(46)}!`)).toBe(false);
   });
 });
