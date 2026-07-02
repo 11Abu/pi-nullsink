@@ -1,7 +1,7 @@
 // Pure hub model: rows, state, key reducer, wizard machine. NO pi-tui imports, NO I/O —
 // everything here runs under bun test with plain objects.
 import {
-  activeProfile, DEFAULTS, DISPLAY_MODES, maskKey, renderOrderSegment,
+  activeProfile, DEFAULTS, DISPLAY_MODES, INCOGNITO_MODES, maskKey, renderOrderSegment,
   type ModelsFile, type StoredConfigV2,
 } from "../config.ts";
 import { isValidToken } from "../token.ts";
@@ -151,7 +151,7 @@ export function settingsRows(d: HubData): RowSpec[] {
 
   rows.push({
     id: "incognito", section: "Privacy", label: "Incognito", kind: "cycle",
-    options: ["off", "always"], value: cfg.incognito ?? DEFAULTS.incognito,
+    options: INCOGNITO_MODES, value: cfg.incognito ?? DEFAULTS.incognito,
     description: "always: fresh sessions are never written to disk. Terminal scrollback and files the agent edits are outside this.",
   });
   return rows;
@@ -412,7 +412,9 @@ function reduceRows(state: HubState, key: KeyName, d: HubData): { state: HubStat
   if (row.kind === "cycle" && (key === "enter" || key === "left" || key === "right")) {
     const opts = row.options!;
     const dir = key === "left" ? opts.length - 1 : 1;
-    const next = opts[(opts.indexOf(row.value.replace(" (env)", "")) + dir) % opts.length]!;
+    // Clamp: an unknown stored value anchors at index 0, so cycling stays deterministic.
+    const cur = Math.max(0, opts.indexOf(row.value.replace(" (env)", "")));
+    const next = opts[(cur + dir) % opts.length]!;
     if (row.id.startsWith("provider-")) {
       return { state, effects: [{ kind: "toggleProvider", provider: row.id.slice("provider-".length) as "anthropic" | "openai" | "tinfoil", on: next === "on" }] };
     }

@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import type { StoredConfigV2 } from "../src/config.ts";
 import { emptyConfigV2 } from "../src/config.ts";
+import { generateToken } from "../src/token.ts";
 import {
   initialHubState, modelRows, reduceHub, settingsRows, validateField, walletRows,
   type HubData, type HubState,
@@ -241,5 +242,137 @@ describe("review-pinned behaviors", () => {
     let s = cursorToSettings(initialHubState(), d, "lowBalanceUsd");
     s = reduceHub(s, "enter", d).state;
     expect(s.editing?.buffer).toBe("");
+  });
+});
+
+describe("contract completions", () => {
+  function cursorToSettings(s: HubState, d: HubData, rowId: string): HubState {
+    const idx = settingsRows(d).findIndex((r) => r.id === rowId);
+    return { ...s, cursor: { ...s.cursor, settings: idx } };
+  }
+  function openWizard(d: HubData): HubState {
+    let s: HubState = { ...initialHubState(), tab: "wallet" };
+    const idx = walletRows(d).findIndex((r) => r.id === "topup");
+    s = { ...s, cursor: { ...s.cursor, wallet: idx } };
+    return reduceHub(s, "enter", d).state;
+  }
+
+  test("esc in the editor closes it without a close effect", () => {
+    const d = data();
+    let s = cursorToSettings(initialHubState(), d, "lowBalanceUsd");
+    s = reduceHub(s, "enter", d).state;
+    expect(s.editing?.rowId).toBe("lowBalanceUsd");
+    const { state: s2, effects } = reduceHub(s, "esc", d);
+    expect(s2.editing).toBeNull();
+    expect(effects).toEqual([]);
+  });
+  test("esc on the rail step returns to the amount step", () => {
+    const d = data();
+    let s = openWizard(d);
+    s = reduceHub(s, "enter", d).state; // $25 -> rail
+    expect(s.wizard?.step).toBe("rail");
+    s = reduceHub(s, "esc", d).state;
+    expect(s.wizard).toEqual({ step: "amount", cursor: 1, custom: "" });
+  });
+  test("enter on the error step returns to the amount step", () => {
+    const d = data();
+    const s: HubState = { ...initialHubState(), tab: "wallet", wizard: { step: "error", message: "quote failed" } };
+    const { state: s2 } = reduceHub(s, "enter", d);
+    expect(s2.wizard).toEqual({ step: "amount", cursor: 1, custom: "" });
+  });
+  test("armed clear-config confirm disarms on cursor movement, no action fires", () => {
+    const d = data();
+    let s: HubState = { ...initialHubState(), tab: "wallet" };
+    const rows = walletRows(d);
+    s = { ...s, cursor: { ...s.cursor, wallet: rows.findIndex((r) => r.id === "clear-config") } };
+    s = reduceHub(s, "enter", d).state;
+    expect(s.confirm).toBe("clear-config");
+    const { state: s2, effects } = reduceHub(s, "up", d);
+    expect(s2.confirm).toBeNull();
+    expect(effects).toEqual([]);
+  });
+
+  test("armed mismatch confirm disarms on backspace: next enter re-arms, no commit", () => {
+    const d = data();
+    let s = cursorToSettings(initialHubState(), d, "apiKey");
+    s = reduceHub(s, "enter", d).state;
+    for (const ch of `0sink_${"c".repeat(47)}`) s = reduceHub(s, { char: ch }, d).state;
+    s = reduceHub(s, "enter", d).state; // arm
+    expect(s.editing?.confirmMismatch).toBe(true);
+    s = reduceHub(s, "backspace", d).state; // disarm
+    const { state: s2, effects } = reduceHub(s, "enter", d);
+    expect(effects).toEqual([]); // re-armed, NOT committed
+    expect(s2.editing?.error).toContain("enter again");
+    expect(s2.editing?.confirmMismatch).toBe(true);
+  });
+  test("valid apiKey commits on the first enter, no arming", () => {
+    const d = data();
+    const good = generateToken();
+    let s = cursorToSettings(initialHubState(), d, "apiKey");
+    s = reduceHub(s, "enter", d).state;
+    for (const ch of good) s = reduceHub(s, { char: ch }, d).state;
+    const { state: s2, effects } = reduceHub(s, "enter", d);
+    expect(effects).toEqual([{ kind: "set", field: "apiKey", value: good }]);
+    expect(s2.editing).toBeNull();
+  });
+
+  test("←→ on a cycle row cycles the value instead of switching tabs", () => {
+    const d = data(); // display defaults to "statusline"
+    const s = cursorToSettings(initialHubState(), d, "display");
+    const right = reduceHub(s, "right", d);
+    expect(right.effects).toEqual([{ kind: "set", field: "display", value: "widget" }]);
+    expect(right.state.tab).toBe("settings");
+    const left = reduceHub(s, "left", d);
+    expect(left.effects).toEqual([{ kind: "set", field: "display", value: "off" }]); // wraps backwards
+    expect(left.state.tab).toBe("settings");
+  });
+
+  test("editor seeds the explicitly-set value", () => {
+    const d = data({ cfg: cfg({ lowBalanceUsd: 2.5 }) });
+    let s = cursorToSettings(initialHubState(), d, "lowBalanceUsd");
+    s = reduceHub(s, "enter", d).state;
+    expect(s.editing?.buffer).toBe("2.5");
+  });
+
+  test("baseUrl env override disables the row and tags (env)", () => {
+    const rows = settingsRows(data({ envUrl: "https://env.example" }));
+    const row = rows.find((r) => r.id === "baseUrl")!;
+    expect(row.disabled).toBe(true);
+    expect(row.value).toContain("(env)");
+  });
+
+  test("models tab: typed chars build the filter, backspace trims it", () => {
+    const d = data();
+    let s: HubState = { ...initialHubState(), tab: "models" };
+    for (const ch of "op") s = reduceHub(s, { char: ch }, d).state;
+    expect(s.filter).toBe("op");
+    s = reduceHub(s, "backspace", d).state;
+    expect(s.filter).toBe("o");
+  });
+
+  test("custom amount below the minimum stays on amount with the $2 floor in the error", () => {
+    const d = data();
+    let s = openWizard(d);
+    s = reduceHub(s, { char: "1" }, d).state;
+    const { state: s2 } = reduceHub(s, "enter", d);
+    expect(s2.wizard?.step).toBe("amount");
+    if (s2.wizard?.step === "amount") expect(s2.wizard.error).toContain("$2");
+  });
+
+  test("tab is swallowed while editing", () => {
+    const d = data();
+    let s = cursorToSettings(initialHubState(), d, "lowBalanceUsd");
+    s = reduceHub(s, "enter", d).state;
+    const { state: s2, effects } = reduceHub(s, "tab", d);
+    expect(s2.editing?.rowId).toBe("lowBalanceUsd");
+    expect(s2.tab).toBe("settings");
+    expect(effects).toEqual([]);
+  });
+
+  test("unknown cycle value anchors at index 0: left emits the last option", () => {
+    const d = data({ cfg: cfg({ thinkingLevel: "weird" }) });
+    const s = cursorToSettings(initialHubState(), d, "thinkingLevel");
+    const { effects } = reduceHub(s, "left", d);
+    expect(effects).toEqual([{ kind: "set", field: "thinkingLevel", value: "xhigh" }]);
   });
 });
