@@ -40,5 +40,8 @@
     "@earendil-works/pi-coding-agent": "*",
     "@types/bun": "latest",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "uqr": "^0.1.3"
   }
 }
