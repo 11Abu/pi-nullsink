@@ -3,7 +3,6 @@ import {
   isDisplayMode,
   LOW_BALANCE_USD,
   maskKey,
-  parseStoredConfig,
   renderStatusLine,
   renderWidget,
   resolveBaseUrlValue,
@@ -37,52 +36,6 @@ describe("isDisplayMode", () => {
     expect(isDisplayMode(undefined)).toBe(false);
     expect(isDisplayMode(3)).toBe(false);
     expect(isDisplayMode({})).toBe(false);
-  });
-});
-
-describe("parseStoredConfig", () => {
-  test("degrades non-object inputs to an empty config", () => {
-    expect(parseStoredConfig(null)).toEqual({});
-    expect(parseStoredConfig(undefined)).toEqual({});
-    expect(parseStoredConfig("0sink_x")).toEqual({});
-    expect(parseStoredConfig(5)).toEqual({});
-    expect(parseStoredConfig([1, "x"])).toEqual({});
-  });
-
-  test("reads all four fields from a valid object", () => {
-    expect(
-      parseStoredConfig({ apiKey: "0sink_x", baseUrl: "https://h", display: "widget", setupDone: true }),
-    ).toEqual({ apiKey: "0sink_x", baseUrl: "https://h", display: "widget", setupDone: true });
-  });
-
-  test("trims apiKey and baseUrl", () => {
-    expect(parseStoredConfig({ apiKey: "  0sink_x  ", baseUrl: "  https://h  " })).toEqual({
-      apiKey: "0sink_x",
-      baseUrl: "https://h",
-    });
-  });
-
-  test("drops blank / whitespace-only apiKey and blank baseUrl", () => {
-    expect(parseStoredConfig({ apiKey: "   ", baseUrl: "" })).toEqual({});
-  });
-
-  test("drops a display value outside the four modes", () => {
-    expect(parseStoredConfig({ display: "line" })).toEqual({});
-  });
-
-  test("keeps setupDone only when strictly true", () => {
-    expect(parseStoredConfig({ setupDone: false })).toEqual({});
-    expect(parseStoredConfig({ setupDone: "true" })).toEqual({});
-    expect(parseStoredConfig({ setupDone: 1 })).toEqual({});
-    expect(parseStoredConfig({ setupDone: true })).toEqual({ setupDone: true });
-  });
-
-  test("drops fields with the wrong type", () => {
-    expect(parseStoredConfig({ apiKey: 5, baseUrl: {}, display: 2 })).toEqual({});
-  });
-
-  test("ignores unknown keys", () => {
-    expect(parseStoredConfig({ apiKey: "0sink_x", nope: "junk", extra: 1 })).toEqual({ apiKey: "0sink_x" });
   });
 });
 

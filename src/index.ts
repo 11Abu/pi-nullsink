@@ -9,12 +9,14 @@
 import process from "node:process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
+  activeProfile,
   API_KEY_ENV,
   BASE_URL_ENV,
   type BalanceResult,
   buildProviders,
   DISPLAY_MODES,
   type DisplayMode,
+  emptyConfigV2,
   type Endpoints,
   interpretBalance,
   isDisplayMode,
@@ -29,7 +31,7 @@ import {
   type StatusState,
 } from "./config.ts";
 import { isValidToken } from "./token.ts";
-import { clearConfig, loadConfig, saveConfig } from "./store.ts";
+import { clearConfig, loadConfigV2, saveConfigV2 } from "./store.ts";
 import modelsData from "./models.json";
 
 const models = modelsData as ModelsFile;
@@ -64,13 +66,14 @@ export default function nullsink(pi: ExtensionAPI): void {
 
   // Load saved config and, only when the env var is unset, inject the saved key so pi's per-request
   // resolver ($NULLSINK_API_KEY) — and --list-models — see it. Env always wins.
-  const stored = loadConfig();
-  if (!process.env[API_KEY_ENV]?.trim() && stored?.apiKey) {
-    process.env[API_KEY_ENV] = stored.apiKey;
+  const cfg = loadConfigV2();
+  const savedKey = cfg ? activeProfile(cfg).apiKey : undefined;
+  if (!process.env[API_KEY_ENV]?.trim() && savedKey) {
+    process.env[API_KEY_ENV] = savedKey;
     state.injectedEnv = true;
   }
-  state.display = stored?.display ?? "statusline";
-  state.endpoints = resolveEndpoints(resolveBaseUrlValue(process.env[BASE_URL_ENV], stored?.baseUrl));
+  state.display = cfg?.display ?? "statusline";
+  state.endpoints = resolveEndpoints(resolveBaseUrlValue(process.env[BASE_URL_ENV], cfg?.baseUrl));
   registerAll(pi);
 
   pi.registerCommand("nullsink", {
@@ -95,7 +98,7 @@ export default function nullsink(pi: ExtensionAPI): void {
     state.lastFetchAt = 0;
     const key = process.env[API_KEY_ENV]?.trim();
     // First-run guided setup: interactive TUI only, no key yet, not previously completed/skipped.
-    if (!key && ctx.mode === "tui" && ctx.hasUI && !loadConfig()?.setupDone) {
+    if (!key && ctx.mode === "tui" && ctx.hasUI && !loadConfigV2()?.setupDone) {
       await runSetup(ctx, true);
     }
     renderStatus(ctx);
@@ -234,10 +237,10 @@ async function saveKey(ctx: ExtensionContext, key: string): Promise<void> {
     const ok = await ctx.ui.confirm("Unusual key", "That doesn't match the 0sink_ format. Save anyway?");
     if (!ok) return;
   }
-  const stored = loadConfig() ?? {};
-  stored.apiKey = key;
-  stored.setupDone = true;
-  saveConfig(stored);
+  const cfg = loadConfigV2() ?? emptyConfigV2();
+  cfg.profiles[cfg.activeProfile] = { ...cfg.profiles[cfg.activeProfile], apiKey: key };
+  cfg.setupDone = true;
+  saveConfigV2(cfg);
   process.env[API_KEY_ENV] = key;
   state.injectedEnv = true;
   emit(ctx, "Key saved (0600). It's spendable with no refunds — keep it safe.", "info");
@@ -250,9 +253,9 @@ async function runConfigMenu(ctx: ExtensionContext): Promise<void> {
     showConfigText(ctx);
     return;
   }
-  const stored = loadConfig() ?? {};
+  const cfg = loadConfigV2() ?? emptyConfigV2();
   const key = process.env[API_KEY_ENV]?.trim();
-  const urlLabel = resolveBaseUrlValue(process.env[BASE_URL_ENV], stored.baseUrl) ?? NULLSINK_DEFAULT_BASE_URL;
+  const urlLabel = resolveBaseUrlValue(process.env[BASE_URL_ENV], cfg.baseUrl) ?? NULLSINK_DEFAULT_BASE_URL;
   const choice = await ctx.ui.select("nullsink config", [
     `API key: ${key ? maskKey(key) : "not set"}`,
     `Base URL: ${urlLabel}`,
@@ -297,11 +300,11 @@ async function editBaseUrl(ctx: ExtensionContext): Promise<void> {
       return;
     }
   }
-  const stored = loadConfig() ?? {};
-  if (trimmed) stored.baseUrl = trimmed;
-  else delete stored.baseUrl;
-  saveConfig(stored);
-  state.endpoints = resolveEndpoints(resolveBaseUrlValue(process.env[BASE_URL_ENV], stored.baseUrl));
+  const cfg = loadConfigV2() ?? emptyConfigV2();
+  if (trimmed) cfg.baseUrl = trimmed;
+  else delete cfg.baseUrl;
+  saveConfigV2(cfg);
+  state.endpoints = resolveEndpoints(resolveBaseUrlValue(process.env[BASE_URL_ENV], cfg.baseUrl));
   if (piRef) registerAll(piRef);
   emit(ctx, `Base URL set to ${state.endpoints.site}. Providers reloaded.`, "info");
   if (process.env[BASE_URL_ENV]?.trim()) {
@@ -315,9 +318,9 @@ async function editDisplay(ctx: ExtensionContext): Promise<void> {
   const choice = await ctx.ui.select("Status display", [...DISPLAY_MODES]);
   if (!choice || !isDisplayMode(choice)) return;
   state.display = choice;
-  const stored = loadConfig() ?? {};
-  stored.display = choice;
-  saveConfig(stored);
+  const cfg = loadConfigV2() ?? emptyConfigV2();
+  cfg.display = choice;
+  saveConfigV2(cfg);
   renderStatus(ctx);
   emit(ctx, `Display: ${choice}`, "info");
 }
@@ -344,10 +347,10 @@ async function clearSaved(ctx: ExtensionContext): Promise<void> {
 
 // Mark first-run as handled so the auto-prompt never fires again (even on skip). Cheap idempotent write.
 function markSetupDone(): void {
-  const stored = loadConfig() ?? {};
-  if (stored.setupDone) return;
-  stored.setupDone = true;
-  saveConfig(stored);
+  const cfg = loadConfigV2() ?? emptyConfigV2();
+  if (cfg.setupDone) return;
+  cfg.setupDone = true;
+  saveConfigV2(cfg);
 }
 
 // Best-effort open the funding page in the user's browser; silently ignore if the platform opener
@@ -400,9 +403,9 @@ function showSetupText(ctx: ExtensionContext): void {
 }
 
 function showConfigText(ctx: ExtensionContext): void {
-  const stored = loadConfig() ?? {};
+  const cfg = loadConfigV2() ?? emptyConfigV2();
   const key = process.env[API_KEY_ENV]?.trim();
-  const urlLabel = resolveBaseUrlValue(process.env[BASE_URL_ENV], stored.baseUrl) ?? NULLSINK_DEFAULT_BASE_URL;
+  const urlLabel = resolveBaseUrlValue(process.env[BASE_URL_ENV], cfg.baseUrl) ?? NULLSINK_DEFAULT_BASE_URL;
   const lines = [
     "nullsink config (no UI available — edit env vars or ~/.pi/agent/nullsink.json):",
     `  API key: ${key ? maskKey(key) : "not set"}`,

@@ -145,7 +145,7 @@ export function interpretBalance(status: number, body: unknown): BalanceResult {
 }
 
 // --- persistent config + status rendering (pure) ----------------------------
-// The store.ts I/O layer parses raw JSON through parseStoredConfig and renders through the helpers
+// The store.ts I/O layer parses raw JSON through parseConfigV2 and renders through the helpers
 // below; index.ts wires them to pi. Everything here is pure so the precedence + render matrix is
 // unit-testable without a live runtime.
 
@@ -159,26 +159,159 @@ export function isDisplayMode(x: unknown): x is DisplayMode {
   return typeof x === "string" && (DISPLAY_MODES as readonly string[]).includes(x);
 }
 
-// The on-disk shape of ~/.pi/agent/nullsink.json. Every field optional: a partial/older file still
-// loads. `setupDone` gates the one-time first-run prompt (set even when the user skips, so it never nags).
-export interface StoredConfig {
-  apiKey?: string;
-  baseUrl?: string;
-  display?: DisplayMode;
-  setupDone?: boolean;
+// --- persistent config, schema v2 (profiles) --------------------------------
+export const INCOGNITO_MODES = ["off", "always"] as const;
+export type IncognitoMode = (typeof INCOGNITO_MODES)[number];
+export function isIncognitoMode(x: unknown): x is IncognitoMode {
+  return typeof x === "string" && (INCOGNITO_MODES as readonly string[]).includes(x);
 }
 
-// Coerce parsed JSON (unknown) into a StoredConfig, dropping any field with the wrong type or a blank
-// string — a corrupt/hand-edited file degrades to defaults instead of throwing. Narrows with `in`/typeof
-// (never an inline cast) so each read is actually checked.
-export function parseStoredConfig(raw: unknown): StoredConfig {
-  if (raw === null || typeof raw !== "object") return {};
-  const out: StoredConfig = {};
-  if ("apiKey" in raw && typeof raw.apiKey === "string" && raw.apiKey.trim()) out.apiKey = raw.apiKey.trim();
-  if ("baseUrl" in raw && typeof raw.baseUrl === "string" && raw.baseUrl.trim()) out.baseUrl = raw.baseUrl.trim();
-  if ("display" in raw && isDisplayMode(raw.display)) out.display = raw.display;
-  if ("setupDone" in raw && raw.setupDone === true) out.setupDone = true;
+export interface PendingOrder {
+  hash: string;      // sha256 of the profile's token
+  baseUrl: string;   // instance the quote came from — mismatch drops the order
+  creditUsd: number;
+  rail: string;      // server rail id, e.g. "monero"
+  unit: string;      // display ticker, e.g. "XMR"
+  payTo: string;
+  amount: string;    // VERBATIM coin string — display as-is
+  payUri: string;
+  expiresAt: number; // epoch ms (pay-by deadline)
+  createdAt: number; // epoch ms (drives the 24h backstop)
+}
+
+export interface Profile { apiKey?: string; pendingOrder?: PendingOrder }
+export interface ProviderToggles { anthropic: boolean; openai: boolean; tinfoil: boolean }
+
+export interface StoredConfigV2 {
+  version: 2;
+  activeProfile: string;
+  profiles: Record<string, Profile>;
+  baseUrl?: string;
+  display?: DisplayMode;
+  defaultModel?: string;
+  thinkingLevel?: string;
+  providers?: ProviderToggles;
+  lowBalanceUsd?: number;
+  spendWarnUsd?: number;
+  showSpend?: boolean;
+  refreshSeconds?: number;
+  incognito?: IncognitoMode;
+  setupDone?: boolean;
+  /** Unknown top-level fields, preserved across load→save (forward compatibility). */
+  extra?: Record<string, unknown>;
+}
+
+export const DEFAULTS = {
+  lowBalanceUsd: 1,
+  refreshSeconds: 60,
+  display: "statusline",
+  incognito: "off",
+  providers: { anthropic: true, openai: true, tinfoil: true },
+} as const;
+
+const KNOWN_KEYS = new Set([
+  "version", "activeProfile", "profiles", "baseUrl", "display", "defaultModel", "thinkingLevel",
+  "providers", "lowBalanceUsd", "spendWarnUsd", "showSpend", "refreshSeconds", "incognito", "setupDone",
+  // v1 keys, consumed by migration:
+  "apiKey",
+]);
+
+const str = (x: unknown): string | undefined => (typeof x === "string" && x.trim() ? x : undefined);
+const num = (x: unknown): number | undefined => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
+const bool = (x: unknown): boolean | undefined => (typeof x === "boolean" ? x : undefined);
+
+function parsePendingOrder(x: unknown): PendingOrder | undefined {
+  if (typeof x !== "object" || x === null) return undefined;
+  const o = x as Record<string, unknown>;
+  const hash = str(o.hash), baseUrl = str(o.baseUrl), rail = str(o.rail), unit = str(o.unit);
+  const payTo = str(o.payTo), amount = str(o.amount), payUri = str(o.payUri);
+  const creditUsd = num(o.creditUsd), expiresAt = num(o.expiresAt), createdAt = num(o.createdAt);
+  if (!hash || !baseUrl || !rail || !unit || !payTo || !amount || !payUri) return undefined;
+  if (creditUsd === undefined || expiresAt === undefined || createdAt === undefined) return undefined;
+  return { hash, baseUrl, creditUsd, rail, unit, payTo, amount, payUri, expiresAt, createdAt };
+}
+
+function parseProfile(x: unknown): Profile {
+  if (typeof x !== "object" || x === null) return {};
+  const o = x as Record<string, unknown>;
+  const p: Profile = {};
+  const apiKey = str(o.apiKey);
+  if (apiKey) p.apiKey = apiKey;
+  const order = parsePendingOrder(o.pendingOrder);
+  if (order) p.pendingOrder = order;
+  return p;
+}
+
+function parseProviders(x: unknown): ProviderToggles | undefined {
+  if (typeof x !== "object" || x === null) return undefined;
+  const o = x as Record<string, unknown>;
+  return {
+    anthropic: bool(o.anthropic) ?? true,
+    openai: bool(o.openai) ?? true,
+    tinfoil: bool(o.tinfoil) ?? true,
+  };
+}
+
+export function emptyConfigV2(): StoredConfigV2 {
+  return { version: 2, activeProfile: "default", profiles: {} };
+}
+
+// Parse any historical shape. v1 ({ apiKey, baseUrl, display, setupDone }) migrates into
+// profiles.default. Wrong-typed fields degrade to absent — a hand-edited file never bricks load.
+export function parseConfigV2(raw: unknown): StoredConfigV2 | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const cfg = emptyConfigV2();
+
+  if (typeof o.profiles === "object" && o.profiles !== null) {
+    for (const [name, p] of Object.entries(o.profiles as Record<string, unknown>)) {
+      const clean = str(name);
+      if (clean) cfg.profiles[clean] = parseProfile(p);
+    }
+  }
+  // v1 migration: a top-level apiKey becomes profiles.default (v2 files never carry one).
+  const v1Key = str(o.apiKey);
+  if (v1Key && !cfg.profiles.default?.apiKey) {
+    cfg.profiles.default = { ...cfg.profiles.default, apiKey: v1Key };
+  }
+
+  const active = str(o.activeProfile);
+  cfg.activeProfile = active && active in cfg.profiles ? active : "default";
+
+  cfg.baseUrl = str(o.baseUrl);
+  cfg.display = isDisplayMode(o.display) ? o.display : undefined;
+  cfg.defaultModel = str(o.defaultModel);
+  cfg.thinkingLevel = str(o.thinkingLevel);
+  cfg.providers = parseProviders(o.providers);
+  cfg.lowBalanceUsd = num(o.lowBalanceUsd);
+  cfg.spendWarnUsd = num(o.spendWarnUsd);
+  cfg.showSpend = bool(o.showSpend);
+  cfg.refreshSeconds = num(o.refreshSeconds);
+  cfg.incognito = isIncognitoMode(o.incognito) ? o.incognito : undefined;
+  cfg.setupDone = bool(o.setupDone);
+
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) if (!KNOWN_KEYS.has(k)) extra[k] = v;
+  if (Object.keys(extra).length > 0) cfg.extra = extra;
+
+  return cfg;
+}
+
+// Disk shape: defined fields + preserved unknowns at top level; `extra` itself never serialized.
+export function serializeConfigV2(cfg: StoredConfigV2): Record<string, unknown> {
+  const { extra, ...rest } = cfg;
+  const out: Record<string, unknown> = { ...extra, ...rest };
+  for (const [k, v] of Object.entries(out)) if (v === undefined) delete out[k];
   return out;
+}
+
+export function activeProfile(cfg: StoredConfigV2): Profile {
+  return cfg.profiles[cfg.activeProfile] ?? {};
+}
+
+export function clampRefreshSeconds(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULTS.refreshSeconds;
+  return Math.max(15, Math.round(n));
 }
 
 // Mask a key for display: keep the public "0sink_" prefix + last 4 chars, hide the 43-char secret
