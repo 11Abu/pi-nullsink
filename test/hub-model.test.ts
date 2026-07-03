@@ -7,10 +7,7 @@ import {
   initialHubState, modelRows, reduceHub, settingsRows, validateField, walletRows,
   type HubData, type HubState,
 } from "../src/ui/hub-model.ts";
-import modelsData from "../src/models.json";
-import type { ModelsFile } from "../src/config.ts";
-
-const models = modelsData as ModelsFile;
+import { models } from "../src/models.ts";
 
 function cfg(over: Partial<StoredConfigV2> = {}): StoredConfigV2 {
   const c = emptyConfigV2();

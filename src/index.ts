@@ -63,9 +63,7 @@ import { type HubHost, openHub } from "./ui/hub.ts";
 import type { HubData, HubEffect, HubState } from "./ui/hub-model.ts";
 import { validateField } from "./ui/hub-model.ts";
 import { qrLines } from "./ui/qr.ts";
-import modelsData from "./models.json";
-
-const models = modelsData as ModelsFile;
+import { models } from "./models.ts";
 
 // pi's ThinkingLevel union, kept local: pi-coding-agent does not re-export the type and its owner
 // (@earendil-works/pi-agent-core) has no package `exports` map. This literal set is identical to

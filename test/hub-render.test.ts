@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { ModelsFile, PendingOrder, StoredConfigV2 } from "../src/config.ts";
+import type { PendingOrder, StoredConfigV2 } from "../src/config.ts";
 import { emptyConfigV2 } from "../src/config.ts";
-import modelsData from "../src/models.json";
+import { models } from "../src/models.ts";
 import { initialHubState, modelRows, walletRows, type HubData, type HubState } from "../src/ui/hub-model.ts";
 import { renderHub, renderModelsTab, renderPayScreen } from "../src/ui/hub-render.ts";
 
 const theme = { fg: (_c: string, s: string) => s };
-const models = modelsData as ModelsFile;
 
 function data(over: Partial<HubData> = {}): HubData {
   const cfg: StoredConfigV2 = emptyConfigV2();
