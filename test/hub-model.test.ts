@@ -376,3 +376,16 @@ describe("contract completions", () => {
     expect(effects).toEqual([{ kind: "set", field: "thinkingLevel", value: "xhigh" }]);
   });
 });
+
+describe("wallet mint env guard", () => {
+  test("env key disables the mint row with the env explanation", () => {
+    const rows = walletRows(data({ envKey: `0sink_${"e".repeat(47)}` }));
+    const mint = rows.find((r) => r.id === "mint")!;
+    expect(mint.disabled).toBe(true);
+    expect(mint.description).toContain("NULLSINK_API_KEY");
+  });
+  test("mint row stays enabled without an env key", () => {
+    const mint = walletRows(data()).find((r) => r.id === "mint")!;
+    expect(mint.disabled).toBeFalsy();
+  });
+});

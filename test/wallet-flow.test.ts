@@ -118,3 +118,22 @@ describe("full top-up flow", () => {
     expect(reduceStatus(initialWatchState(), status)).toEqual({ phase: "confirming", confirmations: 7, required: 10 });
   });
 });
+
+describe("resolveClosed baseline honesty (I2)", () => {
+  // resolveClosed maps a `before` of undefined to "was confirmed unfunded → any balance is the
+  // credit". That is sound ONLY for the confirmed-unfunded case (balance kind "unknown" = a 401
+  // this session). The genuinely no-info case — state.balance === undefined, i.e. NO balance reading
+  // this session — is NOT resolveClosed's responsibility: index.ts's tickWatch guards it separately
+  // and settles NEUTRAL ("order closed — check /nullsink balance to confirm") instead of consulting
+  // resolveClosed. These pins lock the pure half of that contract.
+  test("undefined baseline + fresh ok balance stays credited (first-fund / confirmed-unfunded)", () => {
+    expect(resolveClosed(undefined, { kind: "ok", balanceUsd: 12.5, message: "" })).toBe("credited");
+  });
+  test("known baseline with no increase after close reads unknown (reaped, not credited)", () => {
+    expect(resolveClosed(10, { kind: "ok", balanceUsd: 10, message: "" })).toBe("unknown");
+  });
+  test("a non-ok fresh balance is never credited", () => {
+    expect(resolveClosed(undefined, { kind: "unknown", message: "" })).toBe("unknown");
+    expect(resolveClosed(5, { kind: "error", message: "" })).toBe("unknown");
+  });
+});

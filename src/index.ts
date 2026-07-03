@@ -242,9 +242,14 @@ export default function nullsink(pi: ExtensionAPI): void {
     // 1) incognito "always": swap only fresh sessions; resumed ones keep saving.
     if (cfg.incognito === "always" && !isIncognito(ctx)) {
       if (sessionIsFresh(ctx.sessionManager.getEntries())) {
-        const ok = await goIncognito(ctx);
-        if (ok) notify(ctx, "incognito — this session will not be saved", "info");
-        else notify(ctx, "couldn't go incognito automatically — run /nullsink incognito (or pi --no-session)", "warning");
+        const ok = await goIncognito(ctx, (freshCtx) => {
+          notify(freshCtx as ExtensionContext, "incognito — this session will not be saved", "info");
+        });
+        // A successful swap replaces the session: pi invalidates THIS ctx and fires a fresh
+        // session_start for the replacement, which re-runs setup / default model / order resume on
+        // the new ctx. Stop here so we never touch the stale ctx.
+        if (ok) return;
+        notify(ctx, "couldn't go incognito automatically — run /nullsink incognito (or pi --no-session)", "warning");
       } else {
         notify(ctx, "resumed session is still being saved; start fresh for incognito", "info");
       }
@@ -279,6 +284,9 @@ export default function nullsink(pi: ExtensionAPI): void {
         saveConfigV2(cfg);
         notify(ctx, `nullsink: pending order dropped (${drop})`, "warning");
       } else {
+        // Baseline the balance BEFORE watching: a reaped order that settles "closed" must not read
+        // as "credited" for lack of a pre-close balance (I2).
+        await refreshBalance(ctx, true);
         startWatch(ctx);
       }
     }
@@ -423,12 +431,18 @@ async function tickWatch(ctx: ExtensionContext): Promise<void> {
   if (status.state !== "closed") {
     state.watch = reduceStatus(state.watch, status);
     renderStatus(ctx);
+    repaintHub?.(); // live-refresh an open pay screen on every poll
     return;
   }
-  // closed = ambiguous → resolve against a fresh balance
+  // closed = ambiguous → resolve against a fresh balance.
   const key = resolveRawKey();
-  const before = state.balance?.kind === "ok" ? state.balance.balanceUsd : undefined;
   if (!key) return settleWatch(ctx, "unknown"); // keyless can't resolve — surface "check balance"
+  // No balance reading at all this session (state.balance === undefined) → no baseline to compare
+  // against, so we can't honestly claim the credit landed: settle NEUTRAL. DISTINCT from
+  // state.balance.kind === "unknown" (a confirmed 401-unfunded key), which IS a legitimate
+  // first-fund baseline → before=undefined → resolveClosed(undefined, ok) = "credited".
+  if (state.balance === undefined) return settleWatch(ctx, "unknown");
+  const before = state.balance.kind === "ok" ? state.balance.balanceUsd : undefined;
   const fresh = await walletApi().balance(key);
   if (fresh.kind === "error") return; // transient blip at the settle moment — retry next tick
   if (fresh.kind === "ok") state.balance = fresh;
@@ -448,6 +462,7 @@ function settleWatch(ctx: ExtensionContext, phase: "credited" | "unknown" | "dro
         : `pending order dropped (${reason})`;
   emit(ctx, `nullsink: ${msg}`, phase === "credited" ? "info" : "warning");
   renderStatus(ctx);
+  repaintHub?.(); // reflect the settled state in an open hub
 }
 
 // --- guided setup + key save ------------------------------------------------
@@ -471,6 +486,7 @@ async function runSetup(ctx: ExtensionContext, auto: boolean): Promise<void> {
   }
   if (choice.startsWith("Mint")) {
     const token = doMint(ctx);
+    if (token === null) return; // env key owns the session — doMint already explained why
     markSetupDone();
     await ctx.ui.confirm(
       "Your new nullsink key — save it now",
@@ -716,7 +732,7 @@ async function applyAction(ctx: ExtensionCommandContext, id: string): Promise<vo
   if (id === "clear-config") return actionClearConfig(ctx);
   if (id === "mint") {
     const token = doMint(ctx);
-    pushOverride({ reveal: token });
+    if (token !== null) pushOverride({ reveal: token });
     return;
   }
   if (id === "mint-saved") {
@@ -732,7 +748,13 @@ async function applyAction(ctx: ExtensionCommandContext, id: string): Promise<vo
 // Generate a key, save it, and make it the active/current key. Keyless active profile → fund it in
 // place; otherwise mint into a fresh key-N profile and SWITCH to it, so the follow-up wizard funds
 // the key just revealed — never the old profile's. Returns the token for the one-time reveal.
-function doMint(ctx: ExtensionContext): string {
+function doMint(ctx: ExtensionContext): string | null {
+  // Env key wins wherever the apiKey editor is locked (config precedence): a key minted here could
+  // never be used by this session. Abort with the same guidance the disabled row shows.
+  if (state.externalEnv) {
+    emit(ctx, `${API_KEY_ENV} is set — the env key always wins; unset it to mint or manage keys here`, "warning");
+    return null;
+  }
   const token = generateToken();
   const cfg = state.cfg;
   if (!activeProfile(cfg).apiKey) {
@@ -912,6 +934,7 @@ async function cmdPay(ctx: ExtensionCommandContext): Promise<void> {
 
 async function cmdMint(ctx: ExtensionCommandContext): Promise<void> {
   const token = doMint(ctx);
+  if (token === null) return; // env key owns the session — doMint already explained why
   if (ctx.mode === "tui") return openHubOrMenu(ctx, { reveal: token });
   emit(
     ctx,
@@ -929,11 +952,12 @@ async function cmdIncognito(ctx: ExtensionCommandContext): Promise<void> {
     emit(ctx, "Already incognito — this session isn't being saved.", "info");
     return;
   }
-  const ok = await goIncognito(ctx);
-  if (ok) {
-    emit(ctx, "incognito — this session will not be saved.", "info");
-    renderStatus(ctx);
-  } else {
+  const ok = await goIncognito(ctx, (freshCtx) => {
+    const fresh = freshCtx as ExtensionContext;
+    emit(fresh, "incognito — this session will not be saved.", "info");
+    renderStatus(fresh);
+  });
+  if (!ok) {
     emit(ctx, "Couldn't go incognito — run pi --no-session instead.", "warning");
   }
 }

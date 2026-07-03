@@ -172,7 +172,14 @@ export function walletRows(d: HubData, now: number = Date.now()): RowSpec[] {
   if (activeProfile(cfg).pendingOrder) {
     rows.push({ id: "pay", section: "Wallet", label: "Pending order", kind: "action", value: orderRowValue(d, now), description: "Reopen the pay screen for the in-flight order" });
   }
-  rows.push({ id: "mint", section: "Wallet", label: "Mint new key", kind: "action", value: "", description: "Generate a fresh key locally (shown once), then fund it" });
+  const mintDisabled = Boolean(d.envKey);
+  rows.push({
+    id: "mint", section: "Wallet", label: "Mint new key", kind: "action", value: "",
+    disabled: mintDisabled,
+    description: mintDisabled
+      ? "NULLSINK_API_KEY is set — the env key always wins; unset it to mint or manage keys here"
+      : "Generate a fresh key locally (shown once), then fund it",
+  });
   rows.push({ id: "profile-new", section: "Wallet", label: "New profile", kind: "action", value: "", description: "Add a named profile for another key" });
   rows.push({ id: "profile-rename", section: "Wallet", label: "Rename profile", kind: "action", value: cfg.activeProfile, description: "Rename the active profile" });
   rows.push({ id: "profile-delete", section: "Wallet", label: "Delete profile", kind: "action", value: cfg.activeProfile, description: "Remove the active profile and its saved key (enter twice)" });

@@ -29,10 +29,14 @@ export function sessionIsFresh(entries: ReadonlyArray<{ type?: string }>): boole
 type NewSessionCapable = {
   newSession(options?: {
     setup?: (sm: { getSessionFile(): string | undefined; setSessionFile(f: string): void }) => Promise<void>;
+    withSession?: (freshCtx: unknown) => Promise<void> | void;
   }): Promise<unknown>;
 };
 
-export async function goIncognito(ctx: unknown): Promise<boolean> {
+export async function goIncognito(
+  ctx: unknown,
+  onSwapped?: (freshCtx: unknown) => void | Promise<void>,
+): Promise<boolean> {
   const c = ctx as Partial<NewSessionCapable> | null | undefined;
   if (typeof c?.newSession !== "function") return false;
   try {
@@ -51,6 +55,10 @@ export async function goIncognito(ctx: unknown): Promise<boolean> {
         }
         swapped = true;
       },
+      // pi invalidates the pre-swap ctx after newSession — post-swap work (the caller's notice +
+      // status repaint) MUST run against the fresh replacement ctx (pi docs: "Session replacement
+      // lifecycle and footguns"). Only wire withSession when the caller has post-swap work.
+      ...(onSwapped ? { withSession: async (freshCtx: unknown) => { await onSwapped(freshCtx); } } : {}),
     });
     return swapped;
   } catch {

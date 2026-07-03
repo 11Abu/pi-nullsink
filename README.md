@@ -92,10 +92,11 @@ at any time.
 
 ## Incognito
 
-`/nullsink incognito` (or **⚙ Settings → Privacy → Incognito**) stops Pi from **writing this
-session's transcript to disk**. A `⦿ incognito` badge appears in the status line. Set Incognito to
-**`always`** and every *fresh* session goes incognito automatically at start-up, with a one-time
-notice.
+`/nullsink incognito` stops Pi from **writing the current session's transcript to disk** — it acts on
+the session you're in right now, and a `⦿ incognito` badge appears in the status line. The **⚙ Settings
+→ Privacy → Incognito** toggle is different: it sets the incognito **mode** for *future* sessions and
+does **not** touch the session you're already in. Set it to **`always`** and every *fresh* session
+goes incognito automatically at start-up, with a one-time notice.
 
 **The honest boundary.** Incognito covers the **transcript, and only the transcript**. These stay
 exactly as they were:
