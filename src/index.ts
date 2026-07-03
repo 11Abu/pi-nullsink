@@ -470,12 +470,12 @@ async function runSetup(ctx: ExtensionContext, auto: boolean): Promise<void> {
     return;
   }
   if (choice.startsWith("Mint")) {
-    const token = generateToken();
+    const token = doMint(ctx);
+    markSetupDone();
     await ctx.ui.confirm(
       "Your new nullsink key — save it now",
       `${token}\n\nThis key IS your money — anyone holding it can spend it. It is saved to ~/.pi/agent/nullsink.json (mode 0600).`,
     );
-    await saveKey(ctx, token);
     emit(ctx, `Fund it with /nullsink topup — $${BUY_MIN_USD}–$${BUY_MAX_USD} by QR.`, "info");
     return;
   }
