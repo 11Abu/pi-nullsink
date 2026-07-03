@@ -386,3 +386,41 @@ describe("wallet mint env guard", () => {
     expect(mint.disabled).toBeFalsy();
   });
 });
+
+describe("deferred minors (T8)", () => {
+  function openWizard(d: HubData): HubState {
+    let s: HubState = { ...initialHubState(), tab: "wallet" };
+    const idx = walletRows(d).findIndex((r) => r.id === "topup");
+    s = { ...s, cursor: { ...s.cursor, wallet: idx } };
+    return reduceHub(s, "enter", d).state;
+  }
+  test("rail step opens the cursor on the default rail even when it is not index 0", () => {
+    const rails = {
+      default: "bitcoin",
+      rails: [
+        { name: "monero", unit: "XMR", confirmations: 10 },
+        { name: "bitcoin", unit: "BTC", confirmations: 3 },
+        { name: "litecoin", unit: "LTC", confirmations: 6 },
+      ],
+    };
+    const d = data({ rails });
+    let s = openWizard(d); // amount step, cursor 1 => $25
+    s = reduceHub(s, "enter", d).state; // -> rail step
+    expect(s.wizard).toEqual({ step: "rail", creditUsd: 25, cursor: 1 }); // bitcoin (index 1), not 0
+  });
+  test("orderRowValue renders '⧗ confirming n/m · $credit · expires mm:ss' at a frozen now", () => {
+    const now = 1_000_000;
+    const c = emptyConfigV2();
+    c.profiles.default = {
+      apiKey: "0sink_" + "a".repeat(47),
+      pendingOrder: {
+        hash: "a".repeat(64), baseUrl: "https://nullsink.is", creditUsd: 25,
+        rail: "monero", unit: "XMR", payTo: "8AbC", amount: "0.147",
+        payUri: "monero:8AbC", expiresAt: now + 19 * 60_000 + 42_000, createdAt: now,
+      },
+    };
+    const d = data({ cfg: c, watch: { phase: "confirming", confirmations: 4, required: 10 } });
+    const row = walletRows(d, now).find((r) => r.id === "pay")!;
+    expect(row.value).toBe("⧗ confirming 4/10 · $25 · expires 19:42");
+  });
+});

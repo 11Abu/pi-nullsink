@@ -214,6 +214,9 @@ const KNOWN_KEYS = new Set([
 ]);
 
 const str = (x: unknown): string | undefined => (typeof x === "string" && x.trim() ? x : undefined);
+// v1 parity: apiKey/baseUrl load trimmed (v1's parser did — a pasted key with stray whitespace
+// must still authenticate). Other string fields keep str()'s verbatim value.
+const trimmedStr = (x: unknown): string | undefined => str(x)?.trim();
 const num = (x: unknown): number | undefined => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
 const bool = (x: unknown): boolean | undefined => (typeof x === "boolean" ? x : undefined);
 
@@ -232,7 +235,7 @@ function parseProfile(x: unknown): Profile {
   if (typeof x !== "object" || x === null) return {};
   const o = x as Record<string, unknown>;
   const p: Profile = {};
-  const apiKey = str(o.apiKey);
+  const apiKey = trimmedStr(o.apiKey);
   if (apiKey) p.apiKey = apiKey;
   const order = parsePendingOrder(o.pendingOrder);
   if (order) p.pendingOrder = order;
@@ -267,15 +270,15 @@ export function parseConfigV2(raw: unknown): StoredConfigV2 | null {
     }
   }
   // v1 migration: a top-level apiKey becomes profiles.default (v2 files never carry one).
-  const v1Key = str(o.apiKey);
+  const v1Key = trimmedStr(o.apiKey);
   if (v1Key && !cfg.profiles.default?.apiKey) {
     cfg.profiles.default = { ...cfg.profiles.default, apiKey: v1Key };
   }
 
   const active = str(o.activeProfile);
-  cfg.activeProfile = active && active in cfg.profiles ? active : "default";
+  cfg.activeProfile = active && Object.hasOwn(cfg.profiles, active) ? active : "default";
 
-  cfg.baseUrl = str(o.baseUrl);
+  cfg.baseUrl = trimmedStr(o.baseUrl);
   cfg.display = isDisplayMode(o.display) ? o.display : undefined;
   cfg.defaultModel = str(o.defaultModel);
   cfg.thinkingLevel = str(o.thinkingLevel);
@@ -303,7 +306,7 @@ export function serializeConfigV2(cfg: StoredConfigV2): Record<string, unknown> 
 }
 
 export function activeProfile(cfg: StoredConfigV2): Profile {
-  return cfg.profiles[cfg.activeProfile] ?? {};
+  return Object.hasOwn(cfg.profiles, cfg.activeProfile) ? cfg.profiles[cfg.activeProfile]! : {};
 }
 
 export function clampRefreshSeconds(n: number): number {

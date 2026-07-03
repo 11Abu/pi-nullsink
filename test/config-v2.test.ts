@@ -53,6 +53,29 @@ describe("parseConfigV2", () => {
   });
 });
 
+describe("deferred minors (T2)", () => {
+  test("activeProfile 'toString' with no such own profile falls back to default (no prototype leak)", () => {
+    // "toString" is inherited from Object.prototype; an `in` / property-access check would resolve it.
+    const cfg = parseConfigV2({ version: 2, activeProfile: "toString", profiles: {} })!;
+    expect(cfg.activeProfile).toBe("default");
+    const p = activeProfile(cfg);
+    expect(typeof p).not.toBe("function");
+    expect(p).toEqual({});
+  });
+  test("activeProfile() itself refuses prototype keys (defense-in-depth, parser bypassed)", () => {
+    // Handcrafted cfg that never went through parseConfigV2 — pins the access-site guard alone.
+    const cfg = { version: 2, activeProfile: "toString", profiles: {}, } as never;
+    expect(activeProfile(cfg)).toEqual({});
+  });
+  test("trims apiKey and baseUrl on load (v1 parity)", () => {
+    const migrated = parseConfigV2({ apiKey: " 0sink_x ", baseUrl: " https://self.host " })!;
+    expect(migrated.profiles.default!.apiKey).toBe("0sink_x");
+    expect(migrated.baseUrl).toBe("https://self.host");
+    const v2 = parseConfigV2({ version: 2, profiles: { default: { apiKey: " 0sink_y " } } })!;
+    expect(v2.profiles.default!.apiKey).toBe("0sink_y");
+  });
+});
+
 describe("defaults + clamps", () => {
   test("clampRefreshSeconds", () => {
     expect(clampRefreshSeconds(60)).toBe(60);

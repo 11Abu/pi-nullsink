@@ -37,7 +37,7 @@ export function openHub(ctx: ExtensionContext, host: HubHost, initial?: Partial<
   return ctx.ui.custom<void>((tui, theme, _kb, done) => {
     let state: HubState = { ...initialHubState(), ...(initial ?? {}) };
     let closed = false;
-    let cachedLines: string[] | undefined;
+    let cached: { width: number; lines: string[] } | undefined;
 
     const close = () => {
       if (!closed) {
@@ -48,7 +48,7 @@ export function openHub(ctx: ExtensionContext, host: HubHost, initial?: Partial<
     const repaint = () => {
       const override = host.takeStateOverride();
       if (override) state = { ...state, ...override };
-      cachedLines = undefined;
+      cached = undefined;
       tui.requestRender();
     };
     host.onRepaint(repaint);
@@ -67,20 +67,20 @@ export function openHub(ctx: ExtensionContext, host: HubHost, initial?: Partial<
 
     return {
       render(width: number): string[] {
-        if (!cachedLines) {
-          cachedLines = renderHub(state, host.data(), width, Math.max(16, tui.terminal.rows ?? 30), theme);
+        if (!cached || cached.width !== width) {
+          cached = { width, lines: renderHub(state, host.data(), width, Math.max(16, tui.terminal.rows ?? 30), theme) };
         }
-        return cachedLines;
+        return cached.lines;
       },
       invalidate(): void {
-        cachedLines = undefined; // Component contract REQUIRES invalidate (pi-tui dist/tui.d.ts)
+        cached = undefined; // Component contract REQUIRES invalidate (pi-tui dist/tui.d.ts)
       },
       handleInput(data: string): void {
         const key = hubKeyFromData(data);
         if (!key) return;
         const r = reduceHub(state, key, host.data());
         state = r.state;
-        cachedLines = undefined;
+        cached = undefined;
         void dispatch(r.effects);
         tui.requestRender();
       },

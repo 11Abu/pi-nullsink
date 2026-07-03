@@ -20,6 +20,10 @@ describe("orderDropReason", () => {
   test("instance mismatch", () => {
     expect(orderDropReason(order, 3000, "https://fork.example")).toBe("instance-mismatch");
   });
+  test("instance-mismatch wins when both stale and instance-mismatch hold (baseUrl checked first)", () => {
+    const pastBackstop = order.createdAt + ORDER_BACKSTOP_MS + 1;
+    expect(orderDropReason(order, pastBackstop, "https://fork.example")).toBe("instance-mismatch");
+  });
 });
 
 describe("reduceStatus", () => {
@@ -48,6 +52,10 @@ describe("resolveClosed", () => {
     expect(resolveClosed(10, { kind: "ok", balanceUsd: 10, message: "" })).toBe("unknown");
     expect(resolveClosed(10, { kind: "error", message: "" })).toBe("unknown");
     expect(resolveClosed(undefined, { kind: "unknown", message: "" })).toBe("unknown");
+  });
+  test("ok balance without a balanceUsd field → unknown (credit can't be confirmed)", () => {
+    expect(resolveClosed(10, { kind: "ok", message: "" })).toBe("unknown");
+    expect(resolveClosed(undefined, { kind: "ok", message: "" })).toBe("unknown");
   });
 });
 
