@@ -62,6 +62,11 @@ describe("deferred minors (T2)", () => {
     expect(typeof p).not.toBe("function");
     expect(p).toEqual({});
   });
+  test("activeProfile() itself refuses prototype keys (defense-in-depth, parser bypassed)", () => {
+    // Handcrafted cfg that never went through parseConfigV2 — pins the access-site guard alone.
+    const cfg = { version: 2, activeProfile: "toString", profiles: {}, } as never;
+    expect(activeProfile(cfg)).toEqual({});
+  });
   test("trims apiKey and baseUrl on load (v1 parity)", () => {
     const migrated = parseConfigV2({ apiKey: " 0sink_x ", baseUrl: " https://self.host " })!;
     expect(migrated.profiles.default!.apiKey).toBe("0sink_x");

@@ -150,6 +150,7 @@ rest of the threat model:
 - **Money origin** — Tor hides your *network* origin, not your *money* origin: Monero hides the sender on-chain, Bitcoin does not.
 - **Global observers** — an adversary who can time both ends of the circuit can still correlate them.
 - **Exit blocking** — some networks throttle or block Tor exits; if requests stall, that's why. Balance and order state then fail **visibly** — pi's dispatcher applies to every request or none, so it never silently falls back to a direct connection.
+- **Browser hand-offs** — anything that opens your browser (the funding page, the Trocador swap link) leaves pi's dispatcher entirely and fetches from your normal network path — as does your wallet's own broadcast when you pay.
 
 The endgame is an upstream `.onion` service so traffic never has to exit Tor at all — tracked in
 [`docs/2026-07-03-upstream-asks.md`](docs/2026-07-03-upstream-asks.md).
