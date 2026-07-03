@@ -111,6 +111,49 @@ session is never silently swapped**: continue an existing session with `always` 
 notice ("resumed session is still being saved; start fresh for incognito") rather than a false
 sense of privacy.
 
+## Routing through Tor
+
+nullsink keeps **no IP logs** by promise; Tor makes it so by construction — the operator can't log
+what it never receives. If your threat model includes the operator or your own ISP, route pi through
+Tor and the box that meters your key never learns the address you connect from.
+
+**How it works.** Pi routes **all** of its HTTP through a single global dispatcher — undici's
+`EnvHttpProxyAgent`. Point that dispatcher at a proxy in either of two places: set `httpProxy` in
+`~/.pi/agent/settings.json`, or export `HTTP_PROXY` / `HTTPS_PROXY` before you launch pi (env wins
+over the setting). Either one covers **both** the `/v1` chat traffic **and** this extension's wallet
+calls (`/balance`, `/buy`, `/order-status`, `/rails`) — the extension makes its requests through the
+same dispatcher pi installed, so there is deliberately **no separate pi-nullsink proxy setting**. One
+knob, no partial coverage.
+
+**Pointing it at Tor.** undici speaks HTTP `CONNECT` proxies, not SOCKS. Tor exposes an HTTP tunnel
+natively: add `HTTPTunnelPort 8118` to your `torrc` and restart Tor. Then name that port as the
+proxy in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "httpProxy": "http://127.0.0.1:8118"
+}
+```
+
+or per-launch, no file needed:
+
+```sh
+HTTPS_PROXY=http://127.0.0.1:8118 HTTP_PROXY=http://127.0.0.1:8118 pi
+```
+
+Do **not** point it at Tor's SOCKS port (`9050`) — undici can't speak SOCKS, so it will not work.
+
+**The honest boundary.** Tor moves your **network origin, and only that** — it doesn't rewrite the
+rest of the threat model:
+
+- **Latency** — streaming chat over Tor is noticeably slower (the wallet's background polls don't care).
+- **Money origin** — Tor hides your *network* origin, not your *money* origin: Monero hides the sender on-chain, Bitcoin does not.
+- **Global observers** — an adversary who can time both ends of the circuit can still correlate them.
+- **Exit blocking** — some networks throttle or block Tor exits; if requests stall, that's why. Balance and order state then fail **visibly** — pi's dispatcher applies to every request or none, so it never silently falls back to a direct connection.
+
+The endgame is an upstream `.onion` service so traffic never has to exit Tor at all — tracked in
+[`docs/2026-07-03-upstream-asks.md`](docs/2026-07-03-upstream-asks.md).
+
 ## Config & status display
 
 The hub's **⚙ Settings** tab groups every setting under a section rail; changes apply live and
