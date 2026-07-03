@@ -437,11 +437,11 @@ async function tickWatch(ctx: ExtensionContext): Promise<void> {
   // closed = ambiguous → resolve against a fresh balance.
   const key = resolveRawKey();
   if (!key) return settleWatch(ctx, "unknown"); // keyless can't resolve — surface "check balance"
-  // No balance reading at all this session (state.balance === undefined) → no baseline to compare
-  // against, so we can't honestly claim the credit landed: settle NEUTRAL. DISTINCT from
+  // No baseline OR errored baseline (state.balance === undefined or kind "error") → nothing to
+  // honestly compare against, so we can't claim the credit landed: settle NEUTRAL. DISTINCT from
   // state.balance.kind === "unknown" (a confirmed 401-unfunded key), which IS a legitimate
   // first-fund baseline → before=undefined → resolveClosed(undefined, ok) = "credited".
-  if (state.balance === undefined) return settleWatch(ctx, "unknown");
+  if (state.balance === undefined || state.balance.kind === "error") return settleWatch(ctx, "unknown");
   const before = state.balance.kind === "ok" ? state.balance.balanceUsd : undefined;
   const fresh = await walletApi().balance(key);
   if (fresh.kind === "error") return; // transient blip at the settle moment — retry next tick
