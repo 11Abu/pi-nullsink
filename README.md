@@ -107,7 +107,7 @@ exactly as they were:
 nullsink's own no-account / no-logs model covers the network side. Our config writes — your key and
 any pending-order metadata — are *settings*, not transcript, and continue as normal. And a **resumed
 session is never silently swapped**: continue an existing session with `always` on and you get a
-notice ("this resumed session is still being saved; start fresh for incognito") rather than a false
+notice ("resumed session is still being saved; start fresh for incognito") rather than a false
 sense of privacy.
 
 ## Config & status display
@@ -140,9 +140,9 @@ The **balance readout** updates on session start, after balance / config / walle
 deposit) · `⚠ balance unavailable` (couldn't reach nullsink) · `○ no key · /nullsink setup`. A
 `⦿ incognito` prefix and a `⧗ …` order suffix decorate the line as needed.
 
-No TUI? Every command still works: the hub falls back to a dialog menu (or plain text), and
-`topup` / `mint` / `pay` print the address, amount, payment URI, and a scannable text QR as plain
-lines.
+No TUI? Every command still works: the hub falls back to a dialog menu (or plain text). `mint`
+prints your new key once plus a funding hint; `topup` / `pay` print the address, amount, payment
+URI, and a scannable text QR as plain lines.
 
 ## Pricing is exact
 

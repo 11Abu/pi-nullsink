@@ -461,7 +461,7 @@ async function runSetup(ctx: ExtensionContext, auto: boolean): Promise<void> {
   }
   const choice = await ctx.ui.select("Set up nullsink — anonymous, no account, key = money (no refunds)", [
     "I have a key — paste it",
-    "Mint & fund a key at nullsink.is",
+    "Mint a key now (generated locally)",
     "Skip for now",
   ]);
   if (!choice || choice.startsWith("Skip")) {
@@ -470,13 +470,13 @@ async function runSetup(ctx: ExtensionContext, auto: boolean): Promise<void> {
     return;
   }
   if (choice.startsWith("Mint")) {
-    markSetupDone();
-    await openUrl(NULLSINK_DEFAULT_BASE_URL);
-    emit(
-      ctx,
-      `Opened ${NULLSINK_DEFAULT_BASE_URL}. Mint a key, fund it with Monero/Bitcoin, then run /nullsink setup to save it.`,
-      "info",
+    const token = generateToken();
+    await ctx.ui.confirm(
+      "Your new nullsink key — save it now",
+      `${token}\n\nThis key IS your money — anyone holding it can spend it. It is saved to ~/.pi/agent/nullsink.json (mode 0600).`,
     );
+    await saveKey(ctx, token);
+    emit(ctx, `Fund it with /nullsink topup — $${BUY_MIN_USD}–$${BUY_MAX_USD} by QR.`, "info");
     return;
   }
   const key = await ctx.ui.input("Paste your nullsink key", "0sink_…");
@@ -1106,7 +1106,7 @@ function showSetupText(ctx: ExtensionContext): void {
   const configured = Boolean(resolveRawKey());
   const lines = [
     "nullsink setup (no UI available — set an env var instead):",
-    `  1. Mint & fund a key at ${NULLSINK_DEFAULT_BASE_URL} (Monero/Bitcoin).`,
+    `  1. Mint a key locally with /nullsink mint (shown once), then fund it with /nullsink topup.`,
     `  2. export ${API_KEY_ENV}=0sink_your_key   ${configured ? "(currently set ✓)" : "(currently NOT set)"}`,
     '  3. /model → choose a "nullsink · …" model.',
   ];
