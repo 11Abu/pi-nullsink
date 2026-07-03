@@ -1,0 +1,27 @@
+[
+  {
+    "random": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "checksum": "HP4a",
+    "token": "0sink_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHP4a"
+  },
+  {
+    "random": "___________________________________________",
+    "checksum": "UbUM",
+    "token": "0sink____________________________________________UbUM"
+  },
+  {
+    "random": "abcDEF123-_ghiJKL456MNopq789rstUVWxyz0-AbCd",
+    "checksum": "hSHM",
+    "token": "0sink_abcDEF123-_ghiJKL456MNopq789rstUVWxyz0-AbCdhSHM"
+  },
+  {
+    "random": "0000000000000000000000000000000000000000000",
+    "checksum": "wr5n",
+    "token": "0sink_0000000000000000000000000000000000000000000wr5n"
+  },
+  {
+    "random": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "checksum": "oaRd",
+    "token": "0sink_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzoaRd"
+  }
+]

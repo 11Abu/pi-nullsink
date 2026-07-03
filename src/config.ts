@@ -14,10 +14,6 @@ export const BASE_URL_ENV = "NULLSINK_BASE_URL";
 // The public instance. A self-host sets NULLSINK_BASE_URL to its own origin.
 export const NULLSINK_DEFAULT_BASE_URL = "https://nullsink.is";
 
-// nullsink token shape (see core/src/token-format.ts): "0sink_" + 43 random + 4 checksum chars.
-// Shape-only guard for a friendly "that doesn't look like a key" warning — NOT the checksum check.
-export const TOKEN_RE = /^0sink_[A-Za-z0-9_-]{47}$/;
-
 // The provider registration keys. Three providers because nullsink speaks two wire formats and
 // groups models into trust tiers; splitting them mirrors the /models page and keeps the /model
 // picker legible.
@@ -149,12 +145,9 @@ export function interpretBalance(status: number, body: unknown): BalanceResult {
 }
 
 // --- persistent config + status rendering (pure) ----------------------------
-// The store.ts I/O layer parses raw JSON through parseStoredConfig and renders through the helpers
+// The store.ts I/O layer parses raw JSON through parseConfigV2 and renders through the helpers
 // below; index.ts wires them to pi. Everything here is pure so the precedence + render matrix is
 // unit-testable without a live runtime.
-
-// Below this the statusline flags a low balance and nudges a top-up.
-export const LOW_BALANCE_USD = 1;
 
 // How the balance readout is surfaced. `both` shows the footer line AND the widget; `off` hides both.
 export const DISPLAY_MODES = ["statusline", "widget", "both", "off"] as const;
@@ -163,26 +156,159 @@ export function isDisplayMode(x: unknown): x is DisplayMode {
   return typeof x === "string" && (DISPLAY_MODES as readonly string[]).includes(x);
 }
 
-// The on-disk shape of ~/.pi/agent/nullsink.json. Every field optional: a partial/older file still
-// loads. `setupDone` gates the one-time first-run prompt (set even when the user skips, so it never nags).
-export interface StoredConfig {
-  apiKey?: string;
-  baseUrl?: string;
-  display?: DisplayMode;
-  setupDone?: boolean;
+// --- persistent config, schema v2 (profiles) --------------------------------
+export const INCOGNITO_MODES = ["off", "always"] as const;
+export type IncognitoMode = (typeof INCOGNITO_MODES)[number];
+export function isIncognitoMode(x: unknown): x is IncognitoMode {
+  return typeof x === "string" && (INCOGNITO_MODES as readonly string[]).includes(x);
 }
 
-// Coerce parsed JSON (unknown) into a StoredConfig, dropping any field with the wrong type or a blank
-// string — a corrupt/hand-edited file degrades to defaults instead of throwing. Narrows with `in`/typeof
-// (never an inline cast) so each read is actually checked.
-export function parseStoredConfig(raw: unknown): StoredConfig {
-  if (raw === null || typeof raw !== "object") return {};
-  const out: StoredConfig = {};
-  if ("apiKey" in raw && typeof raw.apiKey === "string" && raw.apiKey.trim()) out.apiKey = raw.apiKey.trim();
-  if ("baseUrl" in raw && typeof raw.baseUrl === "string" && raw.baseUrl.trim()) out.baseUrl = raw.baseUrl.trim();
-  if ("display" in raw && isDisplayMode(raw.display)) out.display = raw.display;
-  if ("setupDone" in raw && raw.setupDone === true) out.setupDone = true;
+export interface PendingOrder {
+  hash: string;      // sha256 of the profile's token
+  baseUrl: string;   // instance the quote came from — mismatch drops the order
+  creditUsd: number;
+  rail: string;      // server rail id, e.g. "monero"
+  unit: string;      // display ticker, e.g. "XMR"
+  payTo: string;
+  amount: string;    // VERBATIM coin string — display as-is
+  payUri: string;
+  expiresAt: number; // epoch ms (pay-by deadline)
+  createdAt: number; // epoch ms (drives the 24h backstop)
+}
+
+export interface Profile { apiKey?: string; pendingOrder?: PendingOrder }
+export interface ProviderToggles { anthropic: boolean; openai: boolean; tinfoil: boolean }
+
+export interface StoredConfigV2 {
+  version: 2;
+  activeProfile: string;
+  profiles: Record<string, Profile>;
+  baseUrl?: string;
+  display?: DisplayMode;
+  defaultModel?: string;
+  thinkingLevel?: string;
+  providers?: ProviderToggles;
+  lowBalanceUsd?: number;
+  spendWarnUsd?: number;
+  showSpend?: boolean;
+  refreshSeconds?: number;
+  incognito?: IncognitoMode;
+  setupDone?: boolean;
+  /** Unknown top-level fields, preserved across load→save (forward compatibility). */
+  extra?: Record<string, unknown>;
+}
+
+export const DEFAULTS = {
+  lowBalanceUsd: 1,
+  refreshSeconds: 60,
+  display: "statusline",
+  incognito: "off",
+  providers: { anthropic: true, openai: true, tinfoil: true },
+} as const;
+
+const KNOWN_KEYS = new Set([
+  "version", "activeProfile", "profiles", "baseUrl", "display", "defaultModel", "thinkingLevel",
+  "providers", "lowBalanceUsd", "spendWarnUsd", "showSpend", "refreshSeconds", "incognito", "setupDone",
+  // v1 keys, consumed by migration:
+  "apiKey",
+]);
+
+const str = (x: unknown): string | undefined => (typeof x === "string" && x.trim() ? x : undefined);
+const num = (x: unknown): number | undefined => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
+const bool = (x: unknown): boolean | undefined => (typeof x === "boolean" ? x : undefined);
+
+function parsePendingOrder(x: unknown): PendingOrder | undefined {
+  if (typeof x !== "object" || x === null) return undefined;
+  const o = x as Record<string, unknown>;
+  const hash = str(o.hash), baseUrl = str(o.baseUrl), rail = str(o.rail), unit = str(o.unit);
+  const payTo = str(o.payTo), amount = str(o.amount), payUri = str(o.payUri);
+  const creditUsd = num(o.creditUsd), expiresAt = num(o.expiresAt), createdAt = num(o.createdAt);
+  if (!hash || !baseUrl || !rail || !unit || !payTo || !amount || !payUri) return undefined;
+  if (creditUsd === undefined || expiresAt === undefined || createdAt === undefined) return undefined;
+  return { hash, baseUrl, creditUsd, rail, unit, payTo, amount, payUri, expiresAt, createdAt };
+}
+
+function parseProfile(x: unknown): Profile {
+  if (typeof x !== "object" || x === null) return {};
+  const o = x as Record<string, unknown>;
+  const p: Profile = {};
+  const apiKey = str(o.apiKey);
+  if (apiKey) p.apiKey = apiKey;
+  const order = parsePendingOrder(o.pendingOrder);
+  if (order) p.pendingOrder = order;
+  return p;
+}
+
+function parseProviders(x: unknown): ProviderToggles | undefined {
+  if (typeof x !== "object" || x === null) return undefined;
+  const o = x as Record<string, unknown>;
+  return {
+    anthropic: bool(o.anthropic) ?? true,
+    openai: bool(o.openai) ?? true,
+    tinfoil: bool(o.tinfoil) ?? true,
+  };
+}
+
+export function emptyConfigV2(): StoredConfigV2 {
+  return { version: 2, activeProfile: "default", profiles: {} };
+}
+
+// Parse any historical shape. v1 ({ apiKey, baseUrl, display, setupDone }) migrates into
+// profiles.default. Wrong-typed fields degrade to absent — a hand-edited file never bricks load.
+export function parseConfigV2(raw: unknown): StoredConfigV2 | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const cfg = emptyConfigV2();
+
+  if (typeof o.profiles === "object" && o.profiles !== null) {
+    for (const [name, p] of Object.entries(o.profiles as Record<string, unknown>)) {
+      const clean = str(name);
+      if (clean) cfg.profiles[clean] = parseProfile(p);
+    }
+  }
+  // v1 migration: a top-level apiKey becomes profiles.default (v2 files never carry one).
+  const v1Key = str(o.apiKey);
+  if (v1Key && !cfg.profiles.default?.apiKey) {
+    cfg.profiles.default = { ...cfg.profiles.default, apiKey: v1Key };
+  }
+
+  const active = str(o.activeProfile);
+  cfg.activeProfile = active && active in cfg.profiles ? active : "default";
+
+  cfg.baseUrl = str(o.baseUrl);
+  cfg.display = isDisplayMode(o.display) ? o.display : undefined;
+  cfg.defaultModel = str(o.defaultModel);
+  cfg.thinkingLevel = str(o.thinkingLevel);
+  cfg.providers = parseProviders(o.providers);
+  cfg.lowBalanceUsd = num(o.lowBalanceUsd);
+  cfg.spendWarnUsd = num(o.spendWarnUsd);
+  cfg.showSpend = bool(o.showSpend);
+  cfg.refreshSeconds = num(o.refreshSeconds);
+  cfg.incognito = isIncognitoMode(o.incognito) ? o.incognito : undefined;
+  cfg.setupDone = bool(o.setupDone);
+
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) if (!KNOWN_KEYS.has(k)) extra[k] = v;
+  if (Object.keys(extra).length > 0) cfg.extra = extra;
+
+  return cfg;
+}
+
+// Disk shape: defined fields + preserved unknowns at top level; `extra` itself never serialized.
+export function serializeConfigV2(cfg: StoredConfigV2): Record<string, unknown> {
+  const { extra, ...rest } = cfg;
+  const out: Record<string, unknown> = { ...extra, ...rest };
+  for (const [k, v] of Object.entries(out)) if (v === undefined) delete out[k];
   return out;
+}
+
+export function activeProfile(cfg: StoredConfigV2): Profile {
+  return cfg.profiles[cfg.activeProfile] ?? {};
+}
+
+export function clampRefreshSeconds(n: number): number {
+  if (!Number.isFinite(n)) return DEFAULTS.refreshSeconds;
+  return Math.max(15, Math.round(n));
 }
 
 // Mask a key for display: keep the public "0sink_" prefix + last 4 chars, hide the 43-char secret
@@ -201,34 +327,54 @@ export function resolveBaseUrlValue(envUrl?: string | null, fileUrl?: string | n
   return envUrl?.trim() || fileUrl?.trim() || undefined;
 }
 
-// Snapshot the status renderers consume. `configured` = a key is present (env or saved); `balance` is
-// the last /balance result (undefined until first fetch); `loading` = a fetch is in flight.
+export interface OrderReadout {
+  phase: "waiting" | "confirming" | "finalizing";
+  confirmations?: number;
+  required?: number;
+}
+
+export const formatUsd = (n: number): string => USD_FMT.format(n);
+
+export function renderOrderSegment(o: OrderReadout): string {
+  if (o.phase === "confirming" && o.confirmations !== undefined && o.required !== undefined) {
+    return `⧗ confirming ${o.confirmations}/${o.required}`;
+  }
+  return `⧗ ${o.phase}`;
+}
+
 export interface StatusState {
   configured: boolean;
-  loading: boolean;
   balance?: BalanceResult;
-  keyMasked?: string;
+  loading?: boolean;
+  lowBalanceUsd: number;
+  incognito?: boolean;
+  order?: OrderReadout;
+  spendUsd?: number;
 }
 
-// The single footer line. Order: no key → known balance (low vs ok) → 401 unfunded → error → mid-fetch
-// → configured-but-not-yet-fetched. Always returns a string; the caller decides whether to show it.
-export function renderStatusLine(s: StatusState): string {
-  if (!s.configured) return "nullsink ○ no key · /nullsink setup";
-  if (s.balance?.kind === "ok" && s.balance.balanceUsd !== undefined) {
-    const amt = USD_FMT.format(s.balance.balanceUsd);
-    return s.balance.balanceUsd < LOW_BALANCE_USD ? `nullsink ⚠ ${amt} · top up` : `nullsink ● ${amt}`;
+// Core readout: no key → balance (low vs ok) → 401 unfunded → error → mid-fetch → not-yet-fetched.
+// BalanceResult's real shape is { kind, balanceUsd?, message } (src/config.ts) — amounts are
+// formatted HERE via USD_FMT, never read from a display field (none exists).
+function renderCore(s: StatusState): string {
+  if (!s.configured) return "○ no key · /nullsink setup";
+  const b = s.balance;
+  if (b?.kind === "ok" && b.balanceUsd !== undefined) {
+    const usd = USD_FMT.format(b.balanceUsd);
+    return b.balanceUsd < s.lowBalanceUsd ? `⚠ ${usd} · top up` : `● ${usd}`;
   }
-  if (s.balance?.kind === "unknown") return "nullsink ⚠ unfunded · top up";
-  if (s.balance?.kind === "error") return "nullsink ⚠ balance unavailable";
-  if (s.loading) return "nullsink … checking";
-  return "nullsink ● key set";
+  if (b?.kind === "unknown") return "⚠ unfunded · /nullsink topup";
+  if (b?.kind === "error") return "⚠ balance unavailable";
+  return s.loading ? "… checking balance" : "● balance not checked";
 }
 
-// The two-line widget: the status line, then a key/action line. Reuses renderStatusLine so the two
-// display modes never disagree on the headline.
+export function renderStatusLine(s: StatusState): string {
+  const parts = [`nullsink ${renderCore(s)}`];
+  if (s.spendUsd !== undefined) parts.push(`spent ${USD_FMT.format(s.spendUsd)}`);
+  if (s.order) parts.push(renderOrderSegment(s.order));
+  const line = parts.join(" · ");
+  return s.incognito ? `⦿ incognito · ${line}` : line;
+}
+
 export function renderWidget(s: StatusState): string[] {
-  const second = s.configured
-    ? `${s.keyMasked ?? "key set"} · /nullsink config`
-    : "mint & fund at nullsink.is";
-  return [renderStatusLine(s), second];
+  return [renderStatusLine(s), "  /nullsink — settings · wallet · models"];
 }

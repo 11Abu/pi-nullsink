@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   isDisplayMode,
-  LOW_BALANCE_USD,
   maskKey,
-  parseStoredConfig,
+  renderOrderSegment,
   renderStatusLine,
   renderWidget,
   resolveBaseUrlValue,
@@ -19,7 +18,8 @@ import {
 const bal = (kind: BalanceKind, balanceUsd?: number): BalanceResult => ({ kind, balanceUsd, message: "" });
 
 // A configured, settled snapshot by default; each test overrides only the axis it exercises.
-const st = (over: Partial<StatusState> = {}): StatusState => ({ configured: true, loading: false, ...over });
+// lowBalanceUsd is required by the v2 StatusState — every case passes the default threshold of 1.
+const st = (over: Partial<StatusState> = {}): StatusState => ({ configured: true, loading: false, lowBalanceUsd: 1, ...over });
 
 describe("isDisplayMode", () => {
   test("accepts the four canonical display modes", () => {
@@ -37,52 +37,6 @@ describe("isDisplayMode", () => {
     expect(isDisplayMode(undefined)).toBe(false);
     expect(isDisplayMode(3)).toBe(false);
     expect(isDisplayMode({})).toBe(false);
-  });
-});
-
-describe("parseStoredConfig", () => {
-  test("degrades non-object inputs to an empty config", () => {
-    expect(parseStoredConfig(null)).toEqual({});
-    expect(parseStoredConfig(undefined)).toEqual({});
-    expect(parseStoredConfig("0sink_x")).toEqual({});
-    expect(parseStoredConfig(5)).toEqual({});
-    expect(parseStoredConfig([1, "x"])).toEqual({});
-  });
-
-  test("reads all four fields from a valid object", () => {
-    expect(
-      parseStoredConfig({ apiKey: "0sink_x", baseUrl: "https://h", display: "widget", setupDone: true }),
-    ).toEqual({ apiKey: "0sink_x", baseUrl: "https://h", display: "widget", setupDone: true });
-  });
-
-  test("trims apiKey and baseUrl", () => {
-    expect(parseStoredConfig({ apiKey: "  0sink_x  ", baseUrl: "  https://h  " })).toEqual({
-      apiKey: "0sink_x",
-      baseUrl: "https://h",
-    });
-  });
-
-  test("drops blank / whitespace-only apiKey and blank baseUrl", () => {
-    expect(parseStoredConfig({ apiKey: "   ", baseUrl: "" })).toEqual({});
-  });
-
-  test("drops a display value outside the four modes", () => {
-    expect(parseStoredConfig({ display: "line" })).toEqual({});
-  });
-
-  test("keeps setupDone only when strictly true", () => {
-    expect(parseStoredConfig({ setupDone: false })).toEqual({});
-    expect(parseStoredConfig({ setupDone: "true" })).toEqual({});
-    expect(parseStoredConfig({ setupDone: 1 })).toEqual({});
-    expect(parseStoredConfig({ setupDone: true })).toEqual({ setupDone: true });
-  });
-
-  test("drops fields with the wrong type", () => {
-    expect(parseStoredConfig({ apiKey: 5, baseUrl: {}, display: 2 })).toEqual({});
-  });
-
-  test("ignores unknown keys", () => {
-    expect(parseStoredConfig({ apiKey: "0sink_x", nope: "junk", extra: 1 })).toEqual({ apiKey: "0sink_x" });
   });
 });
 
@@ -152,23 +106,8 @@ describe("renderStatusLine", () => {
     expect(line).toContain("top up");
   });
 
-  test("LOW_BALANCE_USD is the boundary: at threshold not low, below is low", () => {
-    expect(LOW_BALANCE_USD).toBe(1);
-
-    // At the threshold (1) → NOT low.
-    const atThreshold = renderStatusLine(st({ balance: bal("ok", LOW_BALANCE_USD) }));
-    expect(atThreshold).toContain("$1.00");
-    expect(atThreshold).toContain("●");
-    expect(atThreshold).not.toContain("top up");
-
-    // Just below the threshold → low.
-    const below = renderStatusLine(st({ balance: bal("ok", LOW_BALANCE_USD - 0.2) }));
-    expect(below).toContain("⚠");
-    expect(below).toContain("top up");
-  });
-
   test("unknown balance → unfunded", () => {
-    expect(renderStatusLine(st({ balance: bal("unknown") }))).toContain("unfunded");
+    expect(renderStatusLine(st({ balance: bal("unknown") }))).toBe("nullsink ⚠ unfunded · /nullsink topup");
   });
 
   test("error balance → unavailable", () => {
@@ -179,30 +118,49 @@ describe("renderStatusLine", () => {
     expect(renderStatusLine(st({ loading: true }))).toContain("checking");
   });
 
-  test("no balance, not loading → key set", () => {
-    expect(renderStatusLine(st({ loading: false }))).toBe("nullsink ● key set");
+  test("no balance, not loading → balance not checked", () => {
+    expect(renderStatusLine(st({ loading: false }))).toBe("nullsink ● balance not checked");
   });
 });
 
 describe("renderWidget", () => {
   test("returns a two-line array whose head equals renderStatusLine", () => {
-    const s = st({ keyMasked: "0sink_…wxyz" });
+    const s = st({ balance: bal("ok", 42.5) });
     const w = renderWidget(s);
     expect(Array.isArray(w)).toBe(true);
     expect(w).toHaveLength(2);
     expect(w[0]).toBe(renderStatusLine(s));
   });
 
-  test("configured second line shows the masked key + config action", () => {
-    const w = renderWidget(st({ keyMasked: "0sink_…wxyz" }));
-    expect(w[1]).toContain("0sink_…wxyz");
-    expect(w[1]).toContain("/nullsink config");
+  test("second line is the fixed /nullsink hint, configured or not", () => {
+    expect(renderWidget(st())[1]).toBe("  /nullsink — settings · wallet · models");
+    expect(renderWidget(st({ configured: false }))[1]).toBe("  /nullsink — settings · wallet · models");
   });
+});
 
-  test("unconfigured second line points at nullsink.is", () => {
-    const s = st({ configured: false });
-    const w = renderWidget(s);
-    expect(w[0]).toBe(renderStatusLine(s));
-    expect(w[1]).toContain("nullsink.is");
+describe("renderStatusLine v2 decorations", () => {
+  const base = { configured: true, lowBalanceUsd: 1, balance: { kind: "ok", balanceUsd: 42.5, message: "" } } as const;
+  test("incognito prefix", () => {
+    expect(renderStatusLine({ ...base, incognito: true })).toBe("⦿ incognito · nullsink ● $42.50");
+  });
+  test("spend segment", () => {
+    expect(renderStatusLine({ ...base, spendUsd: 0.834 })).toBe("nullsink ● $42.50 · spent $0.83");
+  });
+  test("order segment states", () => {
+    expect(renderOrderSegment({ phase: "waiting" })).toBe("⧗ waiting");
+    expect(renderOrderSegment({ phase: "confirming", confirmations: 4, required: 10 })).toBe("⧗ confirming 4/10");
+    expect(renderOrderSegment({ phase: "finalizing" })).toBe("⧗ finalizing");
+    expect(renderStatusLine({ ...base, order: { phase: "confirming", confirmations: 4, required: 10 } }))
+      .toBe("nullsink ● $42.50 · ⧗ confirming 4/10");
+  });
+  test("configurable low threshold", () => {
+    const low = { kind: "ok", balanceUsd: 2.4, message: "" } as const;
+    expect(renderStatusLine({ configured: true, lowBalanceUsd: 5, balance: low })).toContain("⚠");
+    expect(renderStatusLine({ configured: true, lowBalanceUsd: 1, balance: low })).toContain("●");
+    expect(renderStatusLine({ configured: true, lowBalanceUsd: 5, balance: { kind: "ok", balanceUsd: 5, message: "" } })).toContain("●");
+  });
+  test("all decorations compose in order", () => {
+    expect(renderStatusLine({ ...base, incognito: true, spendUsd: 1.2, order: { phase: "waiting" } }))
+      .toBe("⦿ incognito · nullsink ● $42.50 · spent $1.20 · ⧗ waiting");
   });
 });
