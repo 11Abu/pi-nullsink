@@ -33,6 +33,31 @@ export function hubKeyFromData(data: string): KeyName | null {
   return null;
 }
 
+const BRACKETED_PASTE_START = "\x1b[200~";
+const BRACKETED_PASTE_END = "\x1b[201~";
+
+export function hubKeysFromData(data: string): KeyName[] {
+  const single = hubKeyFromData(data);
+  if (single) return [single];
+
+  let text = data;
+  if (text.startsWith(BRACKETED_PASTE_START) && text.endsWith(BRACKETED_PASTE_END)) {
+    text = text.slice(BRACKETED_PASTE_START.length, -BRACKETED_PASTE_END.length);
+  }
+
+  // Multi-byte terminal reads are how paste usually arrives. If the chunk contains an escape
+  // sequence we don't recognize, ignore it rather than accidentally typing terminal control bytes.
+  if (text.includes("\x1b")) return [];
+
+  const keys: KeyName[] = [];
+  for (const char of text) {
+    if (char === "\r" || char === "\n") keys.push("enter");
+    else if (char === "\b" || char === "\u007f") keys.push("backspace");
+    else if (char >= " ") keys.push({ char });
+  }
+  return keys;
+}
+
 export function openHub(ctx: ExtensionContext, host: HubHost, initial?: Partial<HubState>): Promise<void> {
   return ctx.ui.custom<void>((tui, theme, _kb, done) => {
     let state: HubState = { ...initialHubState(), ...(initial ?? {}) };
@@ -76,12 +101,14 @@ export function openHub(ctx: ExtensionContext, host: HubHost, initial?: Partial<
         cached = undefined; // Component contract REQUIRES invalidate (pi-tui dist/tui.d.ts)
       },
       handleInput(data: string): void {
-        const key = hubKeyFromData(data);
-        if (!key) return;
-        const r = reduceHub(state, key, host.data());
-        state = r.state;
-        cached = undefined;
-        void dispatch(r.effects);
+        const keys = hubKeysFromData(data);
+        if (keys.length === 0) return;
+        for (const key of keys) {
+          const r = reduceHub(state, key, host.data());
+          state = r.state;
+          cached = undefined;
+          void dispatch(r.effects);
+        }
         tui.requestRender();
       },
     };
