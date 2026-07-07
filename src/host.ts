@@ -53,10 +53,11 @@ import {
 import { runConfigMenuNonTui, runSetup } from "./commands.ts";
 
 // The three provider toggle keys, in registration order: the single source for the
-// provider-id↔toggle-key and model→group mappings (keyForProviderId below; groupForModelId in index.ts).
+// provider-id↔toggle-key and model→group mappings.
 export type ProviderKey = "anthropic" | "openai" | "tinfoil";
 
 export const PROVIDER_KEYS: readonly ProviderKey[] = ["anthropic", "openai", "tinfoil"];
+
 
 // Map a provider registration id (e.g. "nullsink-openai") back to its toggle key.
 export function keyForProviderId(id: string): ProviderKey | undefined {
@@ -325,10 +326,25 @@ function applyToggle(ctx: ExtensionContext, provider: ProviderKey, on: boolean):
   renderStatus(ctx);
 }
 
-function applyDefaultModel(ctx: ExtensionContext, modelId: string): void {
+async function applyDefaultModel(ctx: ExtensionContext, modelId: string): Promise<void> {
   state.cfg.defaultModel = modelId;
   saveConfigV2(state.cfg);
-  notify(ctx, "nullsink: default model set — applies at next session start", "info");
+
+  const group = PROVIDER_KEYS.find((k) => models.providers[k].some((m) => m.id === modelId));
+  const toggles = state.cfg.providers ?? DEFAULTS.providers;
+  let switched = false;
+  if (piRef && group && toggles[group] && resolveRawKey()) {
+    const model = ctx.modelRegistry.find(PROVIDER_IDS[group], modelId);
+    switched = model ? await piRef.setModel(model) : false;
+  }
+
+  notify(
+    ctx,
+    switched
+      ? `nullsink: switched to ${modelId} and saved it as the startup default`
+      : "nullsink: default model saved — switch needs an enabled provider and key",
+    switched ? "info" : "warning",
+  );
   renderStatus(ctx);
 }
 

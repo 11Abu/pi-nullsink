@@ -75,9 +75,8 @@ export interface NamedProvider {
 }
 
 // Build the three provider registrations. The apiKey is an env reference ("$NULLSINK_API_KEY") so
-// pi resolves it per request and the raw key never lands in config/state. Compat is intentionally
-// left to pi's auto-detection: a custom baseUrl that matches no known non-standard host yields
-// exactly what nullsink + upstream need (max_completion_tokens, bearer auth, store:false).
+// pi resolves it per request and the raw key never lands in config/state. Anthropic and GPT-family
+// models use their native APIs; Tinfoil stays on the OpenAI-compatible chat-completions surface.
 export function buildProviders(models: ModelsFile, endpoints: Endpoints): NamedProvider[] {
   const apiKey = `$${API_KEY_ENV}`;
   return [
@@ -97,7 +96,7 @@ export function buildProviders(models: ModelsFile, endpoints: Endpoints): NamedP
         name: "nullsink · OpenAI",
         baseUrl: endpoints.openai,
         apiKey,
-        api: "openai-completions",
+        api: "openai-responses",
         models: models.providers.openai.map(toModelConfig),
       },
     },

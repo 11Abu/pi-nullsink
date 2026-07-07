@@ -168,7 +168,7 @@ everything else is global — so you can switch, add, rename, or delete profiles
 | Account | Session spend warning | off | warn once when this session's cost crosses it |
 | Connection | Base URL | `https://nullsink.is` | self-hosted forks; re-registers providers live |
 | Connection | Anthropic / OpenAI / Tinfoil models | all on | show or hide a provider's models in `/model` |
-| Model | Default model | none | applied once at session start |
+| Model | Default model | none | switches the current session and saves the startup default |
 | Model | Default thinking | off | applied at session start (clamped to the model) |
 | Display | Status display | `statusline` | `statusline / widget / both / off` |
 | Display | Show session spend | off | append this session's nullsink cost to the readout |

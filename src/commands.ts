@@ -262,7 +262,7 @@ export async function runConfigMenuNonTui(ctx: ExtensionCommandContext): Promise
       ...models.providers.openai,
       ...models.providers.tinfoil,
     ].map((m) => m.id);
-    const picked = await ctx.ui.select("Default model (applies next session)", ids);
+    const picked = await ctx.ui.select("Default model (switches now + saves startup default)", ids);
     if (picked) await host.apply({ kind: "setDefaultModel", modelId: picked });
     return;
   }

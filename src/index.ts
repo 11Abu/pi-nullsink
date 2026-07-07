@@ -35,7 +35,6 @@ import {
   keyForProviderId,
   openHubOrMenu,
   PROVIDER_KEYS,
-  type ProviderKey,
   refreshBalance,
   renderStatus,
   startWatch,
@@ -102,10 +101,6 @@ export function activeProfileMut(): Profile {
   return p;
 }
 
-// Which provider group a model id belongs to (drives default-model apply at session start).
-function groupForModelId(id: string): ProviderKey | undefined {
-  return PROVIDER_KEYS.find((k) => models.providers[k].some((m) => m.id === id));
-}
 
 // Push the active profile's key into process.env — but only when we manage it (no shell override).
 // A user's exported NULLSINK_API_KEY is authoritative and never touched.
@@ -239,7 +234,7 @@ export default function nullsink(pi: ExtensionAPI): void {
     // 2) default model + thinking: applied once per session, only when the model's provider is on
     //    and a key resolves. Mid-session /model choices are never overridden.
     if (cfg.defaultModel) {
-      const group = groupForModelId(cfg.defaultModel);
+      const group = PROVIDER_KEYS.find((k) => models.providers[k].some((m) => m.id === cfg.defaultModel));
       const toggles = cfg.providers ?? DEFAULTS.providers;
       if (group && toggles[group] && resolveRawKey()) {
         const model = ctx.modelRegistry.find(PROVIDER_IDS[group], cfg.defaultModel);

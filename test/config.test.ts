@@ -106,10 +106,10 @@ describe("buildProviders", () => {
     ]);
   });
 
-  test("wire format: anthropic-messages then two openai-completions", () => {
+  test("wire format: Anthropic and OpenAI use their native APIs while Tinfoil stays chat completions", () => {
     expect(providers.map((p) => p.config.api)).toEqual([
       "anthropic-messages",
-      "openai-completions",
+      "openai-responses",
       "openai-completions",
     ]);
   });

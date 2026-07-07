@@ -125,7 +125,7 @@ export function settingsRows(d: HubData): RowSpec[] {
   rows.push({
     id: "defaultModel", section: "Model", label: "Default model", kind: "action",
     value: cfg.defaultModel ?? "none",
-    description: "Model applied at session start. Enter picks from the Models tab.",
+    description: "Enter picks from the Models tab, switches now, and saves the startup default.",
   });
   rows.push({
     id: "thinkingLevel", section: "Model", label: "Default thinking", kind: "cycle",
