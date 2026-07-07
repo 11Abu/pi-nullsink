@@ -3,8 +3,8 @@
 Design for turning the extension from "provider + balance readout" into a full terminal client
 for nullsink: mint and top up in the terminal (nullsink.is's own flow, rendered in the TUI),
 an OMP-style tabbed settings hub, key profiles, and an incognito mode. Approved 2026-07-02.
-Supersedes the panel/config portions of `2026-07-01-config-and-ui-design.md`; its store/env
-precedence and balance-cadence decisions carry forward unchanged.
+Supersedes the earlier config + status-UI design; its store/env precedence and balance-cadence
+decisions carry forward unchanged.
 
 ## Goal
 

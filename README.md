@@ -1,23 +1,78 @@
-# pi-nullsink
+<p align="center"><img src="assets/banner.png" alt="nullsink" width="400"></p>
 
-Use frontier **Anthropic**, **OpenAI**, and **Tinfoil** models in the [Pi coding agent](https://pi.dev)
-through [**nullsink**](https://nullsink.is) — an anonymous, account-less, crypto-paid metered reverse
-proxy. No account, no IP logs, no request logs. You mint a bearer key **in the terminal**, fund it
-with Monero or Bitcoin from the same hub, and Pi calls the models through it.
+<h1 align="center">pi-nullsink</h1>
+
+<p align="center"><strong>Anonymous, crypto-paid frontier models — in your terminal.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/11Abu/pi-nullsink/actions/workflows/ci.yml"><img src="https://github.com/11Abu/pi-nullsink/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="package.json"><img src="https://img.shields.io/github/package-json/v/11Abu/pi-nullsink" alt="version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs welcome"></a>
+  <a href="https://pi.dev/packages/pi-nullsink?name=nullsink"><img src="https://img.shields.io/badge/built%20for-Pi-E5FE00.svg" alt="built for Pi"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#funding">Funding</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#pricing">Pricing</a> ·
+  <a href="#faq">FAQ</a>
+</p>
+
+Use frontier **Anthropic**, **OpenAI**, and **Tinfoil** models in the [Pi coding agent](https://pi.dev) —
+anonymously, paid in crypto, without ever leaving the terminal. pi-nullsink is the terminal-native
+client for [**nullsink**](https://nullsink.is): mint a bearer key, fund it with Monero or Bitcoin,
+pick a model, and chat.
+
+![pi-nullsink — mint a key, fund it by QR, and pick a model, all in the terminal](assets/demo.gif)
+
+## Contents
+
+- [Why nullsink?](#why-nullsink)
+- [Install](#install)
+- [Usage](#usage)
+- [Funding](#funding)
+- [Privacy](#privacy)
+- [Configuration](#configuration)
+- [Pricing](#pricing)
+- [Self-hosting](#self-hosting)
+- [FAQ](#faq)
+- [Development](#development)
+- [License](#license)
+
+## Why nullsink?
+
+Using a frontier model normally ties every request to you: an account, an API key in your name, a
+credit card, and prompts logged against your identity.
+
+And those prompts are more than a paper trail. Increasingly, your prompts *are* your source code — an
+agent can rebuild your app from them. Sitting in a provider's logs, they're the blueprint to your
+product, handed over one request at a time.
+
+[**nullsink**](https://nullsink.is) removes the identity. It's an anonymous, account-less,
+crypto-paid **metered reverse proxy** for frontier models — **no account, no IP logs, no request
+logs**. Your money *is* a bearer key: you fund it with Monero or Bitcoin, and that key is the only
+identity the service ever sees. Nothing links it to you.
+
+nullsink's own mint-and-fund flow runs in a browser. **pi-nullsink brings the whole thing into the
+terminal** — mint a key, top up with a live-tracked crypto payment, switch wallets, and change every
+setting from a full-screen hub — then call the models through Pi as usual. No browser, no context
+switch.
 
 ## Install
 
 ```sh
-pi install npm:pi-nullsink
+pi install npm:pi-nullsink   # install the extension
+pi                           # launch — guided setup mints or pastes your key
+/nullsink                    # open the hub: balance, top up, models, settings
 ```
 
-On first launch it runs a short **guided setup** — mint a fresh key **right in the terminal**, paste
-one you already have, or skip. No browser required. Your key is saved to `~/.pi/agent/nullsink.json`
-(mode `0600`) so you enter it **once** and never again — it persists across sessions and shells.
+On first launch it runs a short **guided setup** — mint a fresh key right there, paste one you
+already have, or skip. No browser required. Your key is saved to `~/.pi/agent/nullsink.json`
+(mode `0600`) so you enter it **once** and never again; it persists across sessions and shells.
 Re-run any time with `/nullsink setup`.
-
-Then just `/nullsink` — it opens the **hub**, a full-screen tabbed control panel where you mint keys,
-top up, switch wallets, and change every setting.
 
 Prefer environment variables? Set one and setup won't prompt (env always wins over the saved file):
 
@@ -25,11 +80,10 @@ Prefer environment variables? Set one and setup won't prompt (env always wins ov
 export NULLSINK_API_KEY=0sink_your_key_here
 ```
 
-Either way: pick a model with `/model` (they appear as **nullsink · Anthropic / OpenAI / Tinfoil**)
-and chat as usual. A status line under the editor shows your live balance; check it any time with
-`/nullsink`.
+## Usage
 
-## What you get
+Pick a model with `/model` — they appear as **nullsink · Anthropic / OpenAI / Tinfoil** — and chat
+as usual. A status line under the editor shows your live balance; check it any time with `/nullsink`.
 
 The extension registers three providers, all authenticated with the same `NULLSINK_API_KEY` and
 routed through nullsink's `/v1` proxy:
@@ -44,7 +98,8 @@ The full, current model list is in [`src/models.json`](src/models.json) and via 
 
 ### The hub
 
-`/nullsink` opens a full-screen, tabbed panel — everything nullsink.is can do, in the terminal:
+`/nullsink` opens a full-screen, tabbed control panel — everything nullsink.is can do, in the
+terminal:
 
 ```
 /nullsink ─┬─ ⚙ Settings   Account · Connection · Model · Display · Privacy
@@ -56,26 +111,30 @@ The full, current model list is in [`src/models.json`](src/models.json) and via 
 edit or wizard step, then closes. Every change applies live and persists immediately, and the footer
 always explains the focused item.
 
-### `/nullsink` commands
+### Commands
 
 Each tab is reachable as a subcommand, so you can skip the hub when you know what you want:
 
+- `/nullsink` — open the hub (same as `/nullsink config`).
 - `/nullsink balance` — remaining USD credit.
 - `/nullsink models` — list every served model, grouped by provider.
 - `/nullsink setup` — the guided key setup (mint / paste / skip).
-- `/nullsink config` — open the hub (same as bare `/nullsink`).
 - `/nullsink topup` — fund the active key (amount → coin → pay).
 - `/nullsink pay` — reopen the pay screen for a pending order.
 - `/nullsink mint` — generate a fresh key locally (shown once).
 - `/nullsink incognito` — stop saving this session's transcript.
 - `/nullsink help` — the command list.
 
-## Top up from the terminal
+## Funding
+
+> [!CAUTION]
+> Your key is **bearer money** — whoever holds it can spend it, and there are no refunds or account
+> recovery. Treat it like cash. It lives owner-only (`0600`) in `~/.pi/agent/nullsink.json`.
 
 nullsink.is's funding flow, rendered natively in the TUI — no browser needed. `/nullsink topup`
 (or **◈ Wallet → Top up**) runs a three-step wizard:
 
-1. **Amount** — presets **$10 / $25 / $50 / $100**, or type a custom value. Orders are **$2–$100**.
+1. **Amount** — presets **$10 / $25 / $50 / $100**, or a custom value. Orders are **$2–$100**.
 2. **Coin** — pick a pay rail from nullsink's live `/rails` (cached per session; Monero is always
    available as a fallback).
 3. **Pay** — a half-block **QR** of the payment URI, the destination address, the exact amount and
@@ -90,7 +149,9 @@ it **resumes automatically** the next time you start Pi (up to a 24h backstop). 
 you get a notice and the balance updates; `/nullsink pay` reopens the pay screen for a pending order
 at any time.
 
-## Incognito
+## Privacy
+
+### Incognito
 
 `/nullsink incognito` stops Pi from **writing the current session's transcript to disk** — it acts on
 the session you're in right now, and a `⦿ incognito` badge appears in the status line. The **⚙ Settings
@@ -98,36 +159,35 @@ the session you're in right now, and a `⦿ incognito` badge appears in the stat
 does **not** touch the session you're already in. Set it to **`always`** and every *fresh* session
 goes incognito automatically at start-up, with a one-time notice.
 
-**The honest boundary.** Incognito covers the **transcript, and only the transcript**. These stay
-exactly as they were:
-
-- **Terminal scrollback** — whatever your terminal itself keeps on screen.
-- **Shell history** — a one-shot `pi "my prompt"` still lands in your shell's history.
-- **Files the agent edits** — real writes to your repo are untouched.
+> [!IMPORTANT]
+> **The honest boundary.** Incognito covers the **transcript, and only the transcript**. These stay
+> exactly as they were:
+>
+> - **Terminal scrollback** — whatever your terminal itself keeps on screen.
+> - **Shell history** — a one-shot `pi "my prompt"` still lands in your shell's history.
+> - **Files the agent edits** — real writes to your repo are untouched.
 
 nullsink's own no-account / no-logs model covers the network side. Our config writes — your key and
-any pending-order metadata — are *settings*, not transcript, and continue as normal. And a **resumed
+any pending-order metadata — are *settings*, not transcript, and continue as normal. A **resumed
 session is never silently swapped**: continue an existing session with `always` on and you get a
-notice ("resumed session is still being saved; start fresh for incognito") rather than a false
-sense of privacy.
+notice ("resumed session is still being saved; start fresh for incognito") rather than a false sense
+of privacy.
 
-## Routing through Tor
+### Routing through Tor
 
 nullsink keeps **no IP logs** by promise; Tor makes it so by construction — the operator can't log
-what it never receives. If your threat model includes the operator or your own ISP, route pi through
+what it never receives. If your threat model includes the operator or your own ISP, route Pi through
 Tor and the box that meters your key never learns the address you connect from.
 
-**How it works.** Pi routes **all** of its HTTP through a single global dispatcher — undici's
-`EnvHttpProxyAgent`. Point that dispatcher at a proxy in either of two places: set `httpProxy` in
-`~/.pi/agent/settings.json`, or export `HTTP_PROXY` / `HTTPS_PROXY` before you launch pi (env wins
-over the setting). Either one covers **both** the `/v1` chat traffic **and** this extension's wallet
-calls (`/balance`, `/buy`, `/order-status`, `/rails`) — the extension makes its requests through the
-same dispatcher pi installed, so there is deliberately **no separate pi-nullsink proxy setting**. One
-knob, no partial coverage.
+Pi routes **all** of its HTTP through a single global dispatcher (undici's `EnvHttpProxyAgent`). Point
+that dispatcher at a proxy in either of two places — set `httpProxy` in `~/.pi/agent/settings.json`,
+or export `HTTP_PROXY` / `HTTPS_PROXY` before you launch Pi (env wins). Either one covers **both** the
+`/v1` chat traffic **and** this extension's wallet calls (`/balance`, `/buy`, `/order-status`,
+`/rails`): the extension makes its requests through the same dispatcher Pi installed, so there is
+deliberately **no separate pi-nullsink proxy setting**. One knob, no partial coverage.
 
-**Pointing it at Tor.** undici speaks HTTP `CONNECT` proxies, not SOCKS. Tor exposes an HTTP tunnel
-natively: add `HTTPTunnelPort 8118` to your `torrc` and restart Tor. Then name that port as the
-proxy in `~/.pi/agent/settings.json`:
+undici speaks HTTP `CONNECT` proxies, not SOCKS, and Tor exposes an HTTP tunnel natively. Add
+`HTTPTunnelPort 8118` to your `torrc`, restart Tor, and name that port as the proxy:
 
 ```json
 {
@@ -141,25 +201,47 @@ or per-launch, no file needed:
 HTTPS_PROXY=http://127.0.0.1:8118 HTTP_PROXY=http://127.0.0.1:8118 pi
 ```
 
-Do **not** point it at Tor's SOCKS port (`9050`) — undici can't speak SOCKS, so it will not work.
+Do **not** point it at Tor's SOCKS port (`9050`) — undici can't speak SOCKS, so it won't work.
 
-**The honest boundary.** Tor moves your **network origin, and only that** — it doesn't rewrite the
-rest of the threat model:
-
-- **Latency** — streaming chat over Tor is noticeably slower (the wallet's background polls don't care).
-- **Money origin** — Tor hides your *network* origin, not your *money* origin: Monero hides the sender on-chain, Bitcoin does not.
-- **Global observers** — an adversary who can time both ends of the circuit can still correlate them.
-- **Exit blocking** — some networks throttle or block Tor exits; if requests stall, that's why. Balance and order state then fail **visibly** — pi's dispatcher applies to every request or none, so it never silently falls back to a direct connection.
-- **Browser hand-offs** — anything that opens your browser (the funding page, the Trocador swap link) leaves pi's dispatcher entirely and fetches from your normal network path — as does your wallet's own broadcast when you pay.
+> [!IMPORTANT]
+> **The honest boundary.** Tor moves your **network origin, and only that**:
+>
+> - **Latency** — streaming chat over Tor is noticeably slower (the wallet's background polls don't care).
+> - **Money origin** — Tor hides your *network* origin, not your *money* origin: Monero hides the sender
+>   on-chain, Bitcoin does not.
+> - **Global observers** — an adversary who can time both ends of the circuit can still correlate them.
+> - **Exit blocking** — some networks throttle or block Tor exits; if requests stall, that's why.
+>   Balance and order state then fail **visibly** — Pi's dispatcher applies to every request or none, so
+>   it never silently falls back to a direct connection.
+> - **Browser hand-offs** — anything that opens your browser (the funding page, the Trocador swap)
+>   leaves Pi's dispatcher and uses your normal network path, as does your wallet's own broadcast when
+>   you pay.
 
 The endgame is an upstream `.onion` service so traffic never has to exit Tor at all — tracked in
-[`docs/2026-07-03-upstream-asks.md`](docs/2026-07-03-upstream-asks.md).
+[`docs/upstream-asks.md`](docs/upstream-asks.md).
 
-## Config & status display
+### How your key is handled
 
-The hub's **⚙ Settings** tab groups every setting under a section rail; changes apply live and
-persist immediately. A **profile is a named wallet** — its own key and its own pending order, while
-everything else is global — so you can switch, add, rename, or delete profiles in **◈ Wallet**.
+Your key **is** your money and your only identity. It's minted **locally** — generated from your
+operating system's CSPRNG, so it never has to be created anywhere but your own machine — and saved at
+rest in `~/.pi/agent/nullsink.json` (mode `0600`, owner-only), the same directory and trust boundary
+as Pi's own credentials. It's shown masked (`0sink_…w4Tz`) in all UI.
+
+The raw key leaves your machine only as the `x-api-key` / `Authorization: Bearer` header to `/balance`
+and `/v1`, over TLS — the same way the official Anthropic/OpenAI SDKs send an API key. When you fund
+it, the top-up calls (`/buy`, `/order-status`) only ever see `sha256(key)` (lowercase hex), never the
+key itself. That same `0600` file also stores **pending-order metadata** for an in-flight top-up
+(pay-to address, amounts, coin, quote) so an order can resume across restarts; it holds no secret
+beyond the key.
+
+Review nullsink's [trust model](https://github.com/nullsink/nullsink/blob/main/docs/trust-model.md)
+for what the service does and does not protect.
+
+## Configuration
+
+The hub's **⚙ Settings** tab groups every setting under a section rail; changes apply live and persist
+immediately. A **profile is a named wallet** — its own key and its own pending order, while everything
+else is global — so you can switch, add, rename, or delete profiles in **◈ Wallet**.
 
 | Section | Setting | Default | Notes |
 | --- | --- | --- | --- |
@@ -180,26 +262,31 @@ everything else is global — so you can switch, add, rename, or delete profiles
 with an `(env)` tag, and env-only users never see a setup prompt.
 
 The **balance readout** updates on session start, after balance / config / wallet actions, and
-(throttled) after each turn — never adding per-message latency. States: `● $42.50` (funded) ·
-`⚠ $0.80 · top up` (below your threshold) · `⚠ unfunded · /nullsink topup` (key set, no confirmed
-deposit) · `⚠ balance unavailable` (couldn't reach nullsink) · `○ no key · /nullsink setup`. A
-`⦿ incognito` prefix and a `⧗ …` order suffix decorate the line as needed.
+(throttled) after each turn — never adding per-message latency:
 
-No TUI? Every command still works: the hub falls back to a dialog menu (or plain text). `mint`
-prints your new key once plus a funding hint; `topup` / `pay` print the address, amount, payment
-URI, and a scannable text QR as plain lines.
+- `● $42.50` — funded.
+- `⚠ $0.80 · top up` — below your threshold.
+- `⚠ unfunded · /nullsink topup` — key set, no confirmed deposit.
+- `⚠ balance unavailable` — couldn't reach nullsink.
+- `○ no key · /nullsink setup` — no key yet.
 
-## Pricing is exact
+A `⦿ incognito` prefix and a `⧗ …` order suffix decorate the line as needed.
+
+**No TUI?** Every command still works: the hub falls back to a dialog menu (or plain text). `mint`
+prints your new key once plus a funding hint; `topup` / `pay` print the address, amount, payment URI,
+and a scannable text QR as plain lines.
+
+## Pricing
 
 Per-request cost shown in Pi matches what nullsink actually deducts from your balance. nullsink meters
 **pure upstream cost with no markup** — the small margin is applied only when you top up, not per
 request ([billing model](https://github.com/nullsink/nullsink/blob/main/docs/billing-model.md)). The
-cost table in `src/models.json` is taken verbatim from nullsink's own price snapshot, so Pi's spend
-readout and your balance stay in agreement.
+cost table in [`src/models.json`](src/models.json) is taken verbatim from nullsink's own price
+snapshot, so Pi's spend readout and your balance stay in agreement.
 
 > Every request must set a max output tokens — Pi always does, so this is automatic.
 
-## Self-hosting a fork
+## Self-hosting
 
 Running your own nullsink deployment? Point the extension at it:
 
@@ -211,29 +298,70 @@ The default is `https://nullsink.is`. The value may be the origin (`https://host
 (`https://host/v1`) — both resolve correctly. You can also set it interactively via the hub's
 **Connection → Base URL** row, which re-registers the providers immediately.
 
-## Privacy note
+## FAQ
 
-Your key **is** your money and your only identity. It's minted **locally** — generated from your
-operating system's CSPRNG, so it never has to be created anywhere but your own machine — and saved at
-rest in `~/.pi/agent/nullsink.json` (mode `0600`, owner-only), the same directory and trust boundary
-as Pi's own credentials. It's shown masked (`0sink_…w4Tz`) in all UI.
+<details>
+<summary><strong>Is it actually anonymous?</strong></summary>
 
-**Hash discipline.** The raw key leaves your machine only as the `x-api-key` /
-`Authorization: Bearer` header to `/balance` and `/v1`, over TLS — the same way the official
-Anthropic/OpenAI SDKs send an API key. When you fund it, the top-up calls (`/buy`, `/order-status`)
-only ever see `sha256(key)` (lowercase hex), never the key itself.
+nullsink keeps no account, no IP logs, and no request logs — your bearer key is the only identity it
+ever sees, and you fund it with crypto. That removes the *account* and *billing* trail. It does **not**
+hide your network origin on its own: for that, [route Pi through Tor](#privacy). And it can't change
+your *money* origin — Monero hides the sender on-chain, Bitcoin does not.
+</details>
 
-That same `0600` file also stores **pending-order metadata** for an in-flight top-up — the pay-to
-address, amounts, coin, and quote — so an order can resume across restarts. It holds no secret beyond
-the key itself.
+<details>
+<summary><strong>What if I lose my key?</strong></summary>
 
-Review the [trust model](https://github.com/nullsink/nullsink/blob/main/docs/trust-model.md) for what
-nullsink does and does not protect.
+The key **is** the money — there is no account and no recovery. It lives at `~/.pi/agent/nullsink.json`
+(owner-only, `0600`); back it up like cash. Anyone who holds it can spend the balance.
+</details>
 
-## Maintenance
+<details>
+<summary><strong>How is this different from using the Anthropic/OpenAI API directly?</strong></summary>
 
-`src/models.json` is generated — never hand-edit it. Regenerate from nullsink's price snapshot
-(cost) joined with [models.dev](https://models.dev) (capabilities):
+Used directly, every request is tied to you: an account, an API key in your name, a card, and prompts
+logged against your identity. Through nullsink there is no account, no card, and no request logs — and
+since [your prompts are your source code](#why-nullsink), keeping them out of a provider's logs is the
+whole point.
+</details>
+
+<details>
+<summary><strong>Do you mark up each request?</strong></summary>
+
+No. nullsink meters **pure upstream cost with no per-request markup**; the small margin is applied once,
+when you top up. The cost table in [`src/models.json`](src/models.json) is nullsink's own price snapshot,
+so Pi's spend readout and your balance stay in agreement. See [Pricing](#pricing).
+</details>
+
+<details>
+<summary><strong>My top-up didn't confirm — now what?</strong></summary>
+
+Nothing to do — the order is saved to your profile and **resumes automatically** the next time you start
+Pi (up to a 24h backstop). `/nullsink pay` reopens the pay screen anytime. When an order closes, your
+`/balance` is the authoritative outcome. See [Funding](#funding).
+</details>
+
+<details>
+<summary><strong>Does incognito hide everything?</strong></summary>
+
+No — it stops Pi writing the **session transcript** to disk, and only that. Terminal scrollback, shell
+history, and files the agent edits are outside it. See the honest boundary under [Privacy](#privacy).
+</details>
+
+<details>
+<summary><strong>Can I run my own nullsink?</strong></summary>
+
+Yes — point the extension at your instance with `NULLSINK_BASE_URL=https://your-instance`, or set it in
+the hub's **Connection → Base URL**. See [Self-hosting](#self-hosting).
+</details>
+
+## Development
+
+> [!WARNING]
+> **`src/models.json` is generated — never hand-edit it.**
+
+Regenerate it from nullsink's price snapshot (cost) joined with [models.dev](https://models.dev)
+(capabilities):
 
 ```sh
 bun run sync:models   # rewrites src/models.json
@@ -248,6 +376,10 @@ bun run typecheck     # tsc --noEmit
 bun test              # unit tests for the pure core
 ```
 
+Architecture and the nullsink API contract are documented in [`docs/design.md`](docs/design.md);
+see [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR.
+
 ## License
 
-MIT. nullsink itself is AGPL-3.0-or-later; this is an independent client extension.
+MIT — see [`LICENSE`](LICENSE). nullsink itself is AGPL-3.0-or-later; this is an independent client
+extension.

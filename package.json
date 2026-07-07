@@ -21,7 +21,9 @@
   "type": "module",
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
@@ -31,7 +33,9 @@
   "scripts": {
     "sync:models": "bun run scripts/sync-models.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "demo": "bun run scripts/demo/hub-demo.ts",
+    "demo:record": "vhs scripts/demo/demo.tape"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

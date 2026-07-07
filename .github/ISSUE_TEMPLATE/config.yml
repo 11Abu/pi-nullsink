@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security or key-handling issue
+    url: https://github.com/11Abu/pi-nullsink/security/advisories/new
+    about: Report privately — never in a public issue. A nullsink key is spendable money.
+  - name: nullsink service (not this client)
+    url: https://github.com/nullsink/nullsink
+    about: Issues with the nullsink service, billing, or its trust model belong upstream.
