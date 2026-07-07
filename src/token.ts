@@ -1,5 +1,5 @@
 // nullsink token format — CLEAN-ROOM reimplementation from the public format facts
-// (docs/2026-07-02-terminal-client-design.md §Token format). Pure leaf: node:crypto only.
+// (docs/design.md §Token format). Pure leaf: node:crypto only.
 //
 // Layout: "0sink_" + 43 base64url chars (32 CSPRNG bytes, unpadded) + a 4-char tail.
 // The tail folds an FNV-1a/32 hash of those 43 chars down to 24 bits, written as four

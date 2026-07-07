@@ -1,5 +1,5 @@
 // nullsink money API — the four public endpoints the purchase UI uses, plus the pure order-watch
-// reducer (below). Contract: docs/2026-07-02-terminal-client-design.md §nullsink API contract.
+// reducer (below). Contract: docs/design.md §nullsink API contract.
 // Amounts stay verbatim strings end to end; /buy and /order-status only ever see the token HASH.
 import { type BalanceResult, interpretBalance, type OrderReadout, type PendingOrder } from "./config.ts";
 
