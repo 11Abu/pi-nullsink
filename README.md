@@ -79,7 +79,7 @@ nullsink.is's funding flow, rendered natively in the TUI — no browser needed. 
 2. **Coin** — pick a pay rail from nullsink's live `/rails` (cached per session; Monero is always
    available as a fallback).
 3. **Pay** — a half-block **QR** of the payment URI, the destination address, the exact amount and
-   unit, the locked rate, and an expiry countdown. Send the crypto from your own wallet. Press `[t]`
+   unit, the locked quote, and an expiry countdown. Send the crypto from your own wallet. Press `[t]`
    to hand off to **Trocador AnonPay** and pay in *any* coin — the destination is locked to this
    order's address and amount, and the hand-off carries **no key and no hash**. `esc` backgrounds the
    order; nullsink keeps watching.

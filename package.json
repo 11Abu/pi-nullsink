@@ -1,6 +1,6 @@
 {
   "name": "pi-nullsink",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Pi coding-agent extension: use frontier Anthropic, OpenAI, and Tinfoil models through nullsink — the anonymous, account-less, crypto-paid metered proxy.",
   "keywords": [
     "pi-package",

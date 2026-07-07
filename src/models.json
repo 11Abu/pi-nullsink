@@ -1,5 +1,5 @@
 {
-  "$generated": "2026-07-03",
+  "$generated": "2026-07-07",
   "providers": {
     "anthropic": [
       {
@@ -119,7 +119,7 @@
           "cacheWrite": 3.75
         },
         "contextWindow": 1000000,
-        "maxTokens": 64000
+        "maxTokens": 128000
       },
       {
         "id": "claude-sonnet-4-5",
@@ -135,7 +135,7 @@
           "cacheRead": 0.3,
           "cacheWrite": 3.75
         },
-        "contextWindow": 200000,
+        "contextWindow": 1000000,
         "maxTokens": 64000
       },
       {

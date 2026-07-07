@@ -153,7 +153,7 @@ export function renderPayScreen(order: PendingOrder, watch: WatchState, now: num
   const details = [
     "", theme.fg("accent", `Send exactly  ${order.amount} ${order.unit}`),
     `to  ${order.payTo}`, "",
-    theme.fg("muted", `rate locked · expires in ${mm}:${ss}`),
+    theme.fg("muted", `quote locked · expires in ${mm}:${ss}`),
     status, "",
     theme.fg("muted", "[t] pay with another coin (Trocador)"),
     theme.fg("muted", "[esc] background — I'll keep watching"),
