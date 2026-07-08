@@ -40,6 +40,21 @@ Both must be green before you open a PR — CI runs exactly these on every push 
   precedence, verbatim amounts, and the honest privacy boundary. Weakening one needs a very good
   reason and a test.
 
+## Branching & merging
+
+- **`main` is the trunk and is always releasable** — every commit on it must pass CI.
+- **Anything beyond a trivial one-line fix goes through a branch and a PR**: features, fixes that
+  touch more than one file, removals, doc restructures. Name the branch after the commit type:
+  `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `refactor/<slug>`, `chore/<slug>`. When in doubt,
+  branch.
+- **Squash-merge on GitHub.** The PR title uses the same `type: summary` style and becomes the
+  single commit on `main` — history stays linear, one commit per change. Delete the branch after
+  merging and update your checkout with `git pull --ff-only`.
+- **Never force-push `main` or rewrite published history.** Fix forward: a revert or a follow-up
+  commit.
+- **Releases** happen on `main`: bump `package.json`, move `[Unreleased]` into a dated
+  `## [x.y.z]` section (and update the compare links), commit, then tag `vx.y.z`.
+
 ## Pull requests
 
 - Keep PRs small and focused; describe what changed and why.
