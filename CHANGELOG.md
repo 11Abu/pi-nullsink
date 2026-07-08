@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The workflow standard now states explicitly that the mechanical release rollover commit is the
+  one sanctioned direct-to-`main` commit; everything else goes branch → PR.
+
 ## [0.4.0] — 2026-07-07
 
 ### Changed

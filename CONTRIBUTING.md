@@ -52,8 +52,10 @@ Both must be green before you open a PR — CI runs exactly these on every push 
   merging and update your checkout with `git pull --ff-only`.
 - **Never force-push `main` or rewrite published history.** Fix forward: a revert or a follow-up
   commit.
-- **Releases** happen on `main`: bump `package.json`, move `[Unreleased]` into a dated
-  `## [x.y.z]` section (and update the compare links), commit, then tag `vx.y.z`.
+- **Releases are the one sanctioned direct-to-`main` commit.** The mechanical rollover — bump
+  `package.json`, move `[Unreleased]` into a dated `## [x.y.z]` section (and update the compare
+  links) — is committed as `chore: release vx.y.z` straight on `main`, tagged `vx.y.z`, pushed,
+  then published to npm from the tagged tree. Nothing else skips the branch-and-PR rule.
 
 ## Pull requests
 
