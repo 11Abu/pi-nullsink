@@ -23,8 +23,8 @@ This repository is the **client extension**. A report is in scope when it concer
 - handles or could leak the bearer key (the `0600` file, masking, logs, error output);
 - violates **hash discipline** — sending the raw key anywhere but `/balance` and `/v1`;
 - weakens the **fail-closed** proxy behavior — a request silently bypassing the configured proxy;
-- **overstates the privacy boundary** (incognito, Tor) in a way that could mislead a user about their
-  actual exposure.
+- **overstates the privacy boundary** in a way that could mislead a user about their actual
+  exposure.
 
 The nullsink **service** (nullsink.is) is a separate project — see its
 [trust model](https://github.com/nullsink/nullsink/blob/main/docs/trust-model.md) and report

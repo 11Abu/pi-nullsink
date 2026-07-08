@@ -40,7 +40,6 @@ function demoConfig(): StoredConfigV2 {
     providers: { anthropic: true, openai: true, tinfoil: true },
     lowBalanceUsd: 1,
     refreshSeconds: 60,
-    incognito: "off",
     setupDone: true,
   };
 }
@@ -61,7 +60,6 @@ const data: HubData = {
   models,
   currentProviderKey: "anthropic",
   currentModelId: models.providers.anthropic[0]?.id,
-  incognitoActive: false,
 };
 
 function demoOrder(creditUsd: number): PendingOrder {

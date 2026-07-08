@@ -156,11 +156,6 @@ export function isDisplayMode(x: unknown): x is DisplayMode {
 }
 
 // --- persistent config, schema v2 (profiles) --------------------------------
-export const INCOGNITO_MODES = ["off", "always"] as const;
-export type IncognitoMode = (typeof INCOGNITO_MODES)[number];
-export function isIncognitoMode(x: unknown): x is IncognitoMode {
-  return typeof x === "string" && (INCOGNITO_MODES as readonly string[]).includes(x);
-}
 
 export interface PendingOrder {
   hash: string;      // sha256 of the profile's token
@@ -191,7 +186,6 @@ export interface StoredConfigV2 {
   spendWarnUsd?: number;
   showSpend?: boolean;
   refreshSeconds?: number;
-  incognito?: IncognitoMode;
   setupDone?: boolean;
   /** Unknown top-level fields, preserved across load→save (forward compatibility). */
   extra?: Record<string, unknown>;
@@ -201,15 +195,16 @@ export const DEFAULTS = {
   lowBalanceUsd: 1,
   refreshSeconds: 60,
   display: "statusline",
-  incognito: "off",
   providers: { anthropic: true, openai: true, tinfoil: true },
 } as const;
 
 const KNOWN_KEYS = new Set([
   "version", "activeProfile", "profiles", "baseUrl", "display", "defaultModel", "thinkingLevel",
-  "providers", "lowBalanceUsd", "spendWarnUsd", "showSpend", "refreshSeconds", "incognito", "setupDone",
+  "providers", "lowBalanceUsd", "spendWarnUsd", "showSpend", "refreshSeconds", "setupDone",
   // v1 keys, consumed by migration:
   "apiKey",
+  // retired keys — recognized so they are dropped on save, never preserved as unknowns:
+  "incognito",
 ]);
 
 const str = (x: unknown): string | undefined => (typeof x === "string" && x.trim() ? x : undefined);
@@ -286,7 +281,6 @@ export function parseConfigV2(raw: unknown): StoredConfigV2 | null {
   cfg.spendWarnUsd = num(o.spendWarnUsd);
   cfg.showSpend = bool(o.showSpend);
   cfg.refreshSeconds = num(o.refreshSeconds);
-  cfg.incognito = isIncognitoMode(o.incognito) ? o.incognito : undefined;
   cfg.setupDone = bool(o.setupDone);
 
   const extra: Record<string, unknown> = {};
@@ -349,7 +343,6 @@ export interface StatusState {
   balance?: BalanceResult;
   loading?: boolean;
   lowBalanceUsd: number;
-  incognito?: boolean;
   order?: OrderReadout;
   spendUsd?: number;
 }
@@ -373,8 +366,7 @@ export function renderStatusLine(s: StatusState): string {
   const parts = [`nullsink ${renderCore(s)}`];
   if (s.spendUsd !== undefined) parts.push(`spent ${USD_FMT.format(s.spendUsd)}`);
   if (s.order) parts.push(renderOrderSegment(s.order));
-  const line = parts.join(" · ");
-  return s.incognito ? `⦿ incognito · ${line}` : line;
+  return parts.join(" · ");
 }
 
 export function renderWidget(s: StatusState): string[] {

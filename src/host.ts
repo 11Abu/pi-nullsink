@@ -12,7 +12,6 @@ import {
   DEFAULTS,
   emptyConfigV2,
   isDisplayMode,
-  isIncognitoMode,
   type PendingOrder,
   PROVIDER_IDS,
   type ProviderToggles,
@@ -34,7 +33,6 @@ import {
   toOrderReadout,
   trocadorSwapUrl,
 } from "./wallet.ts";
-import { isIncognito } from "./incognito.ts";
 import { type HubHost, openHub } from "./ui/hub.ts";
 import type { HubData, HubEffect, HubState } from "./ui/hub-model.ts";
 import { models } from "./models.ts";
@@ -82,7 +80,6 @@ export function renderStatus(ctx: ExtensionContext): void {
     configured: Boolean(resolveRawKey()),
     balance: state.balance,
     lowBalanceUsd: cfg.lowBalanceUsd ?? DEFAULTS.lowBalanceUsd,
-    incognito: isIncognito(ctx),
     order: state.watch ? toOrderReadout(state.watch) : undefined,
     spendUsd: cfg.showSpend ? state.spendUsd : undefined,
   };
@@ -209,7 +206,6 @@ export function makeHubHost(ctx: ExtensionCommandContext): HubHost {
         models,
         currentModelId: model?.id,
         currentProviderKey: model ? keyForProviderId(model.provider) : undefined,
-        incognitoActive: isIncognito(ctx),
         spendUsd: state.spendUsd,
       };
     },
@@ -298,9 +294,6 @@ async function applySet(
       break;
     case "thinkingLevel":
       if (typeof value === "string") cfg.thinkingLevel = value;
-      break;
-    case "incognito":
-      if (isIncognitoMode(value)) cfg.incognito = value;
       break;
     default:
       return; // unknown field — ignore

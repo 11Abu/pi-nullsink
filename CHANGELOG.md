@@ -20,6 +20,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Removed
 
+- **Incognito mode** — the `/nullsink incognito` command, the Settings → Privacy toggle, the
+  `always` startup swap, and the `⦿ incognito` status badge. A retired `incognito` key in
+  `~/.pi/agent/nullsink.json` is dropped on the next save.
+- The README's "Routing through Tor" section — it documented Pi's own `httpProxy` / `HTTP_PROXY`
+  support and had no extension code; all extension HTTP still rides Pi's global dispatcher.
 - Retired the internal working docs (v0.1 config/UI design, the v0.2 implementation plan, the v0.3
   scoping proposal) from the tree; they remain in git history.
 

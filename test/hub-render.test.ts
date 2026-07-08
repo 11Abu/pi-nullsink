@@ -10,7 +10,7 @@ const theme = { fg: (_c: string, s: string) => s };
 function data(over: Partial<HubData> = {}): HubData {
   const cfg: StoredConfigV2 = emptyConfigV2();
   cfg.profiles.default = { apiKey: "0sink_" + "a".repeat(47) };
-  return { cfg, models, incognitoActive: false, ...over };
+  return { cfg, models, ...over };
 }
 
 describe("renderHub", () => {

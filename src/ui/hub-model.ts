@@ -1,7 +1,7 @@
 // Pure hub model: rows, state, key reducer, wizard machine. NO pi-tui imports, NO I/O —
 // everything here runs under bun test with plain objects.
 import {
-  activeProfile, DEFAULTS, DISPLAY_MODES, INCOGNITO_MODES, maskKey, renderOrderSegment,
+  activeProfile, DEFAULTS, DISPLAY_MODES, maskKey, renderOrderSegment,
   type ModelsFile, type StoredConfigV2,
 } from "../config.ts";
 import { isValidToken } from "../token.ts";
@@ -39,7 +39,6 @@ export interface HubData {
   models: ModelsFile;
   currentModelId?: string;
   currentProviderKey?: "anthropic" | "openai" | "tinfoil";
-  incognitoActive: boolean;
   spendUsd?: number;
 }
 
@@ -147,12 +146,6 @@ export function settingsRows(d: HubData): RowSpec[] {
     id: "refreshSeconds", section: "Display", label: "Refresh interval", kind: "edit",
     value: `${cfg.refreshSeconds ?? DEFAULTS.refreshSeconds}s`,
     description: "Post-turn balance re-check throttle, seconds (min 15)",
-  });
-
-  rows.push({
-    id: "incognito", section: "Privacy", label: "Incognito", kind: "cycle",
-    options: INCOGNITO_MODES, value: cfg.incognito ?? DEFAULTS.incognito,
-    description: "always: fresh sessions are never written to disk. Terminal scrollback and files the agent edits are outside this.",
   });
   return rows;
 }

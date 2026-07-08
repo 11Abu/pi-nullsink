@@ -122,7 +122,6 @@ Each tab is reachable as a subcommand, so you can skip the hub when you know wha
 - `/nullsink topup` — fund the active key (amount → coin → pay).
 - `/nullsink pay` — reopen the pay screen for a pending order.
 - `/nullsink mint` — generate a fresh key locally (shown once).
-- `/nullsink incognito` — stop saving this session's transcript.
 - `/nullsink help` — the command list.
 
 ## Funding
@@ -150,75 +149,6 @@ you get a notice and the balance updates; `/nullsink pay` reopens the pay screen
 at any time.
 
 ## Privacy
-
-### Incognito
-
-`/nullsink incognito` stops Pi from **writing the current session's transcript to disk** — it acts on
-the session you're in right now, and a `⦿ incognito` badge appears in the status line. The **⚙ Settings
-→ Privacy → Incognito** toggle is different: it sets the incognito **mode** for *future* sessions and
-does **not** touch the session you're already in. Set it to **`always`** and every *fresh* session
-goes incognito automatically at start-up, with a one-time notice.
-
-> [!IMPORTANT]
-> **The honest boundary.** Incognito covers the **transcript, and only the transcript**. These stay
-> exactly as they were:
->
-> - **Terminal scrollback** — whatever your terminal itself keeps on screen.
-> - **Shell history** — a one-shot `pi "my prompt"` still lands in your shell's history.
-> - **Files the agent edits** — real writes to your repo are untouched.
-
-nullsink's own no-account / no-logs model covers the network side. Our config writes — your key and
-any pending-order metadata — are *settings*, not transcript, and continue as normal. A **resumed
-session is never silently swapped**: continue an existing session with `always` on and you get a
-notice ("resumed session is still being saved; start fresh for incognito") rather than a false sense
-of privacy.
-
-### Routing through Tor
-
-nullsink keeps **no IP logs** by promise; Tor makes it so by construction — the operator can't log
-what it never receives. If your threat model includes the operator or your own ISP, route Pi through
-Tor and the box that meters your key never learns the address you connect from.
-
-Pi routes **all** of its HTTP through a single global dispatcher (undici's `EnvHttpProxyAgent`). Point
-that dispatcher at a proxy in either of two places — set `httpProxy` in `~/.pi/agent/settings.json`,
-or export `HTTP_PROXY` / `HTTPS_PROXY` before you launch Pi (env wins). Either one covers **both** the
-`/v1` chat traffic **and** this extension's wallet calls (`/balance`, `/buy`, `/order-status`,
-`/rails`): the extension makes its requests through the same dispatcher Pi installed, so there is
-deliberately **no separate pi-nullsink proxy setting**. One knob, no partial coverage.
-
-undici speaks HTTP `CONNECT` proxies, not SOCKS, and Tor exposes an HTTP tunnel natively. Add
-`HTTPTunnelPort 8118` to your `torrc`, restart Tor, and name that port as the proxy:
-
-```json
-{
-  "httpProxy": "http://127.0.0.1:8118"
-}
-```
-
-or per-launch, no file needed:
-
-```sh
-HTTPS_PROXY=http://127.0.0.1:8118 HTTP_PROXY=http://127.0.0.1:8118 pi
-```
-
-Do **not** point it at Tor's SOCKS port (`9050`) — undici can't speak SOCKS, so it won't work.
-
-> [!IMPORTANT]
-> **The honest boundary.** Tor moves your **network origin, and only that**:
->
-> - **Latency** — streaming chat over Tor is noticeably slower (the wallet's background polls don't care).
-> - **Money origin** — Tor hides your *network* origin, not your *money* origin: Monero hides the sender
->   on-chain, Bitcoin does not.
-> - **Global observers** — an adversary who can time both ends of the circuit can still correlate them.
-> - **Exit blocking** — some networks throttle or block Tor exits; if requests stall, that's why.
->   Balance and order state then fail **visibly** — Pi's dispatcher applies to every request or none, so
->   it never silently falls back to a direct connection.
-> - **Browser hand-offs** — anything that opens your browser (the funding page, the Trocador swap)
->   leaves Pi's dispatcher and uses your normal network path, as does your wallet's own broadcast when
->   you pay.
-
-The endgame is an upstream `.onion` service so traffic never has to exit Tor at all — tracked in
-[`docs/upstream-asks.md`](docs/upstream-asks.md).
 
 ### How your key is handled
 
@@ -255,7 +185,6 @@ else is global — so you can switch, add, rename, or delete profiles in **◈ W
 | Display | Status display | `statusline` | `statusline / widget / both / off` |
 | Display | Show session spend | off | append this session's nullsink cost to the readout |
 | Display | Refresh interval | `60s` | post-turn balance re-check throttle (min 15) |
-| Privacy | Incognito | `off` | `off / always` |
 
 **Environment overrides win.** `NULLSINK_API_KEY` beats the active profile's key and
 `NULLSINK_BASE_URL` beats the saved Base URL; when either is set the matching row is shown read-only
@@ -270,7 +199,7 @@ The **balance readout** updates on session start, after balance / config / walle
 - `⚠ balance unavailable` — couldn't reach nullsink.
 - `○ no key · /nullsink setup` — no key yet.
 
-A `⦿ incognito` prefix and a `⧗ …` order suffix decorate the line as needed.
+A `⧗ …` order suffix decorates the line as needed.
 
 **No TUI?** Every command still works: the hub falls back to a dialog menu (or plain text). `mint`
 prints your new key once plus a funding hint; `topup` / `pay` print the address, amount, payment URI,
@@ -305,8 +234,8 @@ The default is `https://nullsink.is`. The value may be the origin (`https://host
 
 nullsink keeps no account, no IP logs, and no request logs — your bearer key is the only identity it
 ever sees, and you fund it with crypto. That removes the *account* and *billing* trail. It does **not**
-hide your network origin on its own: for that, [route Pi through Tor](#privacy). And it can't change
-your *money* origin — Monero hides the sender on-chain, Bitcoin does not.
+hide your network origin on its own, and it can't change your *money* origin — Monero hides the
+sender on-chain, Bitcoin does not.
 </details>
 
 <details>
@@ -317,7 +246,7 @@ The key **is** the money — there is no account and no recovery. It lives at `~
 </details>
 
 <details>
-<summary><strong>How is this different from using the Anthropic/OpenAI API directly?</strong></summary>
+<summary><strong>How is this different from using the OpenRouter/Anthropic/OpenAI API directly?</strong></summary>
 
 Used directly, every request is tied to you: an account, an API key in your name, a card, and prompts
 logged against your identity. Through nullsink there is no account, no card, and no request logs — and
@@ -339,13 +268,6 @@ so Pi's spend readout and your balance stay in agreement. See [Pricing](#pricing
 Nothing to do — the order is saved to your profile and **resumes automatically** the next time you start
 Pi (up to a 24h backstop). `/nullsink pay` reopens the pay screen anytime. When an order closes, your
 `/balance` is the authoritative outcome. See [Funding](#funding).
-</details>
-
-<details>
-<summary><strong>Does incognito hide everything?</strong></summary>
-
-No — it stops Pi writing the **session transcript** to disk, and only that. Terminal scrollback, shell
-history, and files the agent edits are outside it. See the honest boundary under [Privacy](#privacy).
 </details>
 
 <details>

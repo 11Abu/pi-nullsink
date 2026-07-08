@@ -140,9 +140,6 @@ describe("renderWidget", () => {
 
 describe("renderStatusLine v2 decorations", () => {
   const base = { configured: true, lowBalanceUsd: 1, balance: { kind: "ok", balanceUsd: 42.5, message: "" } } as const;
-  test("incognito prefix", () => {
-    expect(renderStatusLine({ ...base, incognito: true })).toBe("⦿ incognito · nullsink ● $42.50");
-  });
   test("spend segment", () => {
     expect(renderStatusLine({ ...base, spendUsd: 0.834 })).toBe("nullsink ● $42.50 · spent $0.83");
   });
@@ -160,7 +157,7 @@ describe("renderStatusLine v2 decorations", () => {
     expect(renderStatusLine({ configured: true, lowBalanceUsd: 5, balance: { kind: "ok", balanceUsd: 5, message: "" } })).toContain("●");
   });
   test("all decorations compose in order", () => {
-    expect(renderStatusLine({ ...base, incognito: true, spendUsd: 1.2, order: { phase: "waiting" } }))
-      .toBe("⦿ incognito · nullsink ● $42.50 · spent $1.20 · ⧗ waiting");
+    expect(renderStatusLine({ ...base, spendUsd: 1.2, order: { phase: "waiting" } }))
+      .toBe("nullsink ● $42.50 · spent $1.20 · ⧗ waiting");
   });
 });

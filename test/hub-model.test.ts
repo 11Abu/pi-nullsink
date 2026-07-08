@@ -15,13 +15,13 @@ function cfg(over: Partial<StoredConfigV2> = {}): StoredConfigV2 {
   return { ...c, ...over };
 }
 function data(over: Partial<HubData> = {}): HubData {
-  return { cfg: cfg(), models, incognitoActive: false, ...over };
+  return { cfg: cfg(), models, ...over };
 }
 
 describe("settingsRows", () => {
-  test("groups into the five sections in order", () => {
+  test("groups into the four sections in order", () => {
     const sections = [...new Set(settingsRows(data()).map((r) => r.section))];
-    expect(sections).toEqual(["Account", "Connection", "Model", "Display", "Privacy"]);
+    expect(sections).toEqual(["Account", "Connection", "Model", "Display"]);
   });
   test("masks the key and tags env overrides", () => {
     const rows = settingsRows(data({ envKey: "0sink_" + "b".repeat(47) }));

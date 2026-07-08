@@ -5,9 +5,9 @@
 // Install:  pi install npm:pi-nullsink
 // First run walks you through minting/saving a key; after that it persists in ~/.pi/agent/nullsink.json.
 // Use:      /model  → pick a "nullsink · …" model, then chat as usual.
-//           /nullsink → hub (settings · wallet · models); balance · topup · mint · pay · incognito · help.
+//           /nullsink → hub (settings · wallet · models); balance · topup · mint · pay · help.
 //
-// This file is wiring ONLY: the pure modules (config/token/store/wallet/incognito/ui) do the thinking.
+// This file is wiring ONLY: the pure modules (config/token/store/wallet/ui) do the thinking.
 
 import process from "node:process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -29,7 +29,6 @@ import {
 } from "./config.ts";
 import { orderDropReason, type Rails, WalletApi, type WatchState } from "./wallet.ts";
 import { loadConfigV2, saveConfigV2 } from "./store.ts";
-import { goIncognito, isIncognito, sessionIsFresh } from "./incognito.ts";
 import { models } from "./models.ts";
 import {
   keyForProviderId,
@@ -40,7 +39,7 @@ import {
   startWatch,
   stopWatch,
 } from "./host.ts";
-import { checkBalance, cmdIncognito, cmdMint, cmdPay, cmdTopup, runSetup, showHelp, showModels } from "./commands.ts";
+import { checkBalance, cmdMint, cmdPay, cmdTopup, runSetup, showHelp, showModels } from "./commands.ts";
 
 // pi's ThinkingLevel union, kept local: pi-coding-agent does not re-export the type and its owner
 // (@earendil-works/pi-agent-core) has no package `exports` map. This literal set is identical to
@@ -167,9 +166,9 @@ export default function nullsink(pi: ExtensionAPI): void {
   registerAll(pi);
 
   pi.registerCommand("nullsink", {
-    description: "nullsink: balance · topup · mint · pay · models · config · incognito · setup · help",
+    description: "nullsink: balance · topup · mint · pay · models · config · setup · help",
     getArgumentCompletions(prefix) {
-      const items = ["balance", "topup", "mint", "pay", "models", "config", "incognito", "setup", "help"].map(
+      const items = ["balance", "topup", "mint", "pay", "models", "config", "setup", "help"].map(
         (value) => ({ value, label: value }),
       );
       const filtered = items.filter((i) => i.value.startsWith(prefix));
@@ -190,8 +189,6 @@ export default function nullsink(pi: ExtensionAPI): void {
           return runSetup(ctx, false);
         case "help":
           return showHelp(ctx);
-        case "incognito":
-          return cmdIncognito(ctx);
         case "topup":
           return cmdTopup(ctx, parts.slice(1));
         case "pay":
@@ -210,28 +207,12 @@ export default function nullsink(pi: ExtensionAPI): void {
     state.spendWarned = false;
     state.spendUsd = undefined;
 
-    // 1) incognito "always": swap only fresh sessions; resumed ones keep saving.
-    if (cfg.incognito === "always" && !isIncognito(ctx)) {
-      if (sessionIsFresh(ctx.sessionManager.getEntries())) {
-        const ok = await goIncognito(ctx, (freshCtx) => {
-          notify(freshCtx as ExtensionContext, "incognito — this session will not be saved", "info");
-        });
-        // A successful swap replaces the session: pi invalidates THIS ctx and fires a fresh
-        // session_start for the replacement, which re-runs setup / default model / order resume on
-        // the new ctx. Stop here so we never touch the stale ctx.
-        if (ok) return;
-        notify(ctx, "couldn't go incognito automatically — run /nullsink incognito (or pi --no-session)", "warning");
-      } else {
-        notify(ctx, "resumed session is still being saved; start fresh for incognito", "info");
-      }
-    }
-
     // First-run guided setup (preserved behavior): interactive TUI, no key, not previously handled.
     if (!resolveRawKey() && ctx.mode === "tui" && ctx.hasUI && !cfg.setupDone) {
       await runSetup(ctx, true);
     }
 
-    // 2) default model + thinking: applied once per session, only when the model's provider is on
+    // 1) default model + thinking: applied once per session, only when the model's provider is on
     //    and a key resolves. Mid-session /model choices are never overridden.
     if (cfg.defaultModel) {
       const group = PROVIDER_KEYS.find((k) => models.providers[k].some((m) => m.id === cfg.defaultModel));
@@ -246,7 +227,7 @@ export default function nullsink(pi: ExtensionAPI): void {
       }
     }
 
-    // 3) resume a persisted pending order (drop first if stale / instance-mismatch).
+    // 2) resume a persisted pending order (drop first if stale / instance-mismatch).
     const order = activeProfile(cfg).pendingOrder;
     if (order) {
       const drop = orderDropReason(order, Date.now(), currentEndpoints().site);
@@ -262,7 +243,7 @@ export default function nullsink(pi: ExtensionAPI): void {
       }
     }
 
-    // 4) spend baseline + non-blocking balance + rails prefetch.
+    // 3) spend baseline + non-blocking balance + rails prefetch.
     state.sessionStartEntryCount = ctx.sessionManager.getEntries().length;
     renderStatus(ctx);
     void refreshBalance(ctx, true);

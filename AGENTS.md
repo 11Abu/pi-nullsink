@@ -28,7 +28,6 @@ a test.
 | `src/host.ts` | Hub host — session state, `apply(effects)`, order-watch/balance timers, mint/profile ops | shell |
 | `src/commands.ts` | `/nullsink` subcommand handlers + non-TUI dialog/text fallbacks | shell |
 | `src/store.ts` | The **only** filesystem writer: `~/.pi/agent/nullsink.json`, atomic, `0600` | shell |
-| `src/incognito.ts` | Transcript-persistence control, built on Pi's own session primitives | shell |
 | `src/models.ts` | Runtime loader for `models.json` (deliberately not a static JSON import) | shell |
 | `src/config.ts` | Endpoint resolution, provider assembly, balance interpretation, renderers | **pure** |
 | `src/token.ts` | nullsink token generate / checksum / validate / `sha256` (node:crypto only) | **pure** |
@@ -55,9 +54,9 @@ a test.
    `expected` from the wallet API — display exactly as received.
 6. **`closed` is ambiguous** (credited, reaped, or never existed). On `closed`, `/balance` is the
    authoritative outcome.
-7. **The honest privacy boundary.** Incognito stops the **transcript, and only the transcript** —
-   not scrollback, shell history, or file writes. Proxy routing is fail-closed (Pi's single global
-   dispatcher covers every request or none). Don't let docs or UI overstate either.
+7. **The network path is fail-closed.** All extension HTTP rides Pi's single global dispatcher —
+   never a private agent or per-request override — so a user's proxy configuration covers every
+   request or none. Don't let docs or UI overstate the privacy story.
 8. **TDD.** Every bug fix starts with a failing test that reproduces it; new pure logic ships with
    unit tests. Token correctness is pinned by recorded cross-implementation vectors.
 

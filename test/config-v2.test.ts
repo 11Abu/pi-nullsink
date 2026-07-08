@@ -30,11 +30,15 @@ describe("parseConfigV2", () => {
     expect("extra" in out).toBe(false);
   });
   test("wrong-typed fields degrade to absent, never throw", () => {
-    const cfg = parseConfigV2({ version: 2, activeProfile: 7, profiles: "nope", lowBalanceUsd: "x", incognito: "loud" })!;
+    const cfg = parseConfigV2({ version: 2, activeProfile: 7, profiles: "nope", lowBalanceUsd: "x" })!;
     expect(cfg.activeProfile).toBe("default");
     expect(cfg.profiles).toEqual({});
     expect(cfg.lowBalanceUsd).toBeUndefined();
-    expect(cfg.incognito).toBeUndefined();
+  });
+  test("retired incognito key is consumed on load — dropped from disk, never kept in extra", () => {
+    const cfg = parseConfigV2({ version: 2, incognito: "always", futureField: 1 })!;
+    expect(cfg.extra).toEqual({ futureField: 1 });
+    expect("incognito" in serializeConfigV2(cfg)).toBe(false);
   });
   test("drops a malformed pendingOrder but keeps the profile", () => {
     const cfg = parseConfigV2({

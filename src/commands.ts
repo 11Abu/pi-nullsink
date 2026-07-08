@@ -1,5 +1,5 @@
 // pi-nullsink /nullsink subcommands + non-TUI fallbacks: the command handlers (topup / pay / mint /
-// incognito / balance / setup), the dialog-or-text config menu, pay-detail printing, and text output.
+// balance / setup), the dialog-or-text config menu, pay-detail printing, and text output.
 // Split out of index.ts; every config edit still routes through the same host `apply` side effects.
 import process from "node:process";
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -10,7 +10,6 @@ import {
   DEFAULTS,
   DISPLAY_MODES,
   formatUsd,
-  INCOGNITO_MODES,
   maskKey,
   NULLSINK_DEFAULT_BASE_URL,
   type PendingOrder,
@@ -27,7 +26,6 @@ import {
   type Quote,
   trocadorSwapUrl,
 } from "./wallet.ts";
-import { goIncognito, isIncognito } from "./incognito.ts";
 import type { HubHost } from "./ui/hub.ts";
 import { validateField } from "./ui/hub-model.ts";
 import { qrLines } from "./ui/qr.ts";
@@ -48,7 +46,6 @@ import {
   openHubOrMenu,
   type ProviderKey,
   refreshBalance,
-  renderStatus,
   startWatch,
 } from "./host.ts";
 
@@ -144,21 +141,6 @@ export async function cmdMint(ctx: ExtensionCommandContext): Promise<void> {
   );
 }
 
-export async function cmdIncognito(ctx: ExtensionCommandContext): Promise<void> {
-  if (isIncognito(ctx)) {
-    emit(ctx, "Already incognito — this session isn't being saved.", "info");
-    return;
-  }
-  const ok = await goIncognito(ctx, (freshCtx) => {
-    const fresh = freshCtx as ExtensionContext;
-    emit(fresh, "incognito — this session will not be saved.", "info");
-    renderStatus(fresh);
-  });
-  if (!ok) {
-    emit(ctx, "Couldn't go incognito — run pi --no-session instead.", "warning");
-  }
-}
-
 // Print a pending order's pay details as plain lines (address, verbatim amount, URI, Trocador,
 // text QR). Works in any mode; the text QR scans from terminal scrollback.
 function printPayDetails(ctx: ExtensionContext, order: PendingOrder): void {
@@ -199,7 +181,6 @@ export async function runConfigMenuNonTui(ctx: ExtensionCommandContext): Promise
     `Anthropic models: ${providers.anthropic ? "on" : "off"}`,
     `OpenAI models: ${providers.openai ? "on" : "off"}`,
     `Tinfoil models: ${providers.tinfoil ? "on" : "off"}`,
-    `Incognito: ${cfg.incognito ?? DEFAULTS.incognito}`,
     "Clear saved config",
   ];
   const choice = await ctx.ui.select("nullsink config", items);
@@ -269,7 +250,6 @@ export async function runConfigMenuNonTui(ctx: ExtensionCommandContext): Promise
   if (choice.startsWith("Anthropic models")) return toggleFromMenu(ctx, host, "anthropic");
   if (choice.startsWith("OpenAI models")) return toggleFromMenu(ctx, host, "openai");
   if (choice.startsWith("Tinfoil models")) return toggleFromMenu(ctx, host, "tinfoil");
-  if (choice.startsWith("Incognito")) return cycle("Incognito", "incognito", INCOGNITO_MODES);
   if (choice.startsWith("Clear saved config")) {
     const ok = await ctx.ui.confirm("Clear nullsink config?", "Removes saved keys, URL, and settings from ~/.pi/agent/nullsink.json.");
     if (!ok) return;
@@ -378,7 +358,6 @@ export function showHelp(ctx: ExtensionContext): void {
     "  /nullsink pay        reopen the pay screen for a pending order",
     "  /nullsink models     list served models",
     "  /nullsink config     edit settings",
-    "  /nullsink incognito  stop saving this session's transcript",
     "  /nullsink setup      guided key setup (mint / paste / skip)",
     "  /nullsink help       this message",
     'Pick a model with /model → a "nullsink · …" entry. Top up at nullsink.is.',
@@ -414,7 +393,6 @@ function showConfigText(ctx: ExtensionContext): void {
     `  Default model: ${cfg.defaultModel ?? "none"}`,
     `  Default thinking: ${cfg.thinkingLevel ?? "off"}`,
     `  Providers: anthropic=${providers.anthropic ? "on" : "off"} openai=${providers.openai ? "on" : "off"} tinfoil=${providers.tinfoil ? "on" : "off"}`,
-    `  Incognito: ${cfg.incognito ?? DEFAULTS.incognito}`,
   ];
   emit(ctx, lines.join("\n"), "info");
 }
