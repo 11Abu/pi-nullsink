@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-07
+
 ### Changed
 
 - Rewrote the README to lead with what nullsink is and why, added a table of contents, and
@@ -85,7 +87,8 @@ Turned the extension from "provider + balance readout" into a full terminal clie
   key once and it persists across sessions and shells.
 - A live balance status readout under the editor.
 
-[Unreleased]: https://github.com/11Abu/pi-nullsink/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/11Abu/pi-nullsink/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/11Abu/pi-nullsink/releases/tag/v0.4.0
 [0.3.0]: https://github.com/11Abu/pi-nullsink/releases/tag/v0.3.0
 [0.2.0]: https://github.com/11Abu/pi-nullsink/releases/tag/v0.2.0
 [0.1.0]: https://github.com/11Abu/pi-nullsink/releases/tag/v0.1.0
