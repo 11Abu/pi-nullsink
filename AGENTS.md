@@ -71,3 +71,11 @@ bun run sync:models # regenerate src/models.json (review the diff before committ
 
 Runtime is Node ≥22 (Pi's host); the repo is developed and tested with [Bun](https://bun.sh). The
 only runtime dependency is `uqr` (MIT, zero-dep) for QR matrices.
+
+## Shipping changes
+
+Branch → PR → squash-merge. Anything beyond a trivial one-line fix gets a `type/<slug>` branch
+(`feat/…`, `fix/…`, `docs/…`), a PR with green CI, and a squash-merge whose title follows the
+`type: summary` commit style. Never push non-trivial work straight to `main`, never force-push,
+never rewrite published history — fix forward. Full rules in
+[CONTRIBUTING.md](CONTRIBUTING.md#branching--merging).

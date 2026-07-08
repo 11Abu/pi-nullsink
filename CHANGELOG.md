@@ -17,6 +17,8 @@ All notable changes to this project are documented here. The format follows
   demo:record`, driven by `scripts/demo/hub-demo.ts` against the real hub renderer.
 - Project documentation and GitHub scaffolding: `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, `AGENTS.md`, a `docs/` index, and CI + issue/PR templates.
+- The git workflow standard — branch → PR → squash-merge onto a linear `main` — codified in
+  `CONTRIBUTING.md` ("Branching & merging") and `AGENTS.md` ("Shipping changes").
 
 ### Removed
 
